@@ -1,0 +1,6 @@
+framework module Jenova4iPhoneH5 {
+  umbrella header "Jenova4iPhoneH5.h"
+
+  export *
+  module * { export * }
+}

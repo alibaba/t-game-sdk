@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <style>
+        body {
+            margin: 0;
+            /* background: url('https://omniglot.com/images/writing/guarani.gif'); */
+            display: flex;
+            height: 100vh;
+        }
+
+        .container {
+            margin: auto;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+        }
+
+        .container::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: rgba(0, 0, 0, .6);
+        }
+
+        svg {
+            transform: rotateZ(212deg);
+        }
+
+        .circle_bg {
+            stroke: rgba(128, 128, 128, 0.8);
+            stroke-linecap: round;
+        }
+
+        .circle_line {
+            stroke: #fff;
+            stroke-linecap: round;
+            animation: circle-rotate 2.5s ease-in-out infinite;
+        }
+
+        .mobile {
+            height: 28px;
+            width: 46px;
+            border: 3px solid #FFFFFF;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 2px;
+            position: absolute;
+            top: 25%;
+            animation: mobile-rotate 2.5s ease-in-out infinite;
+        }
+
+        .mobile::after {
+            content: '';
+            height: 4px;
+            width: 4px;
+            background: #FFFFFF;
+            background-color: #FFFFFF;
+            border-radius: 50%;
+        }
+
+        .tip {
+            font-family: PingFangSC-Semibold;
+            font-size: 18px;
+            color: #FFFFFF;
+            letter-spacing: 0;
+            text-align: center;
+            position: absolute;
+            top: calc(25% + 50px);
+        }
+
+        @keyframes circle-rotate {
+            0% {
+                stroke-dashoffset: 439.823;
+            }
+
+            50% {
+                stroke-dashoffset: 365.054;
+            }
+
+            100% {
+                stroke-dashoffset: 439.823;
+            }
+        }
+
+        @keyframes mobile-rotate {
+            0% {
+                transform: rotateZ(0);
+            }
+
+            50% {
+                transform: rotateZ(90deg);
+            }
+
+            100% {
+                transform: rotateZ(0);
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+        <svg x="0px" y="0px" width="150px" height="150px" viewBox="0 0 150 150">
+            <circle class="circle_bg" fill="none" stroke-width="5" cx="75" cy="75" r="70" stroke-dasharray="439.823"
+                stroke-dashoffset="365.054" />
+            <circle class="circle_line" stroke="hotpink" fill="none" stroke-width="5" cx="75" cy="75" r="70"
+                stroke-dasharray="439.823" />
+        </svg>
+        <div class="mobile"></div>
+        <div class="tip">横竖屏可切换哦</div>
+    </div>
+</body>
+
+</html>

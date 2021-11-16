@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# Copyright (C) 2021-2014 Alibaba Group Holding Limited
+
+if [ -z "$PYTHON" ]; then
+  PYTHON=$(which python3 2> /dev/null)
+fi
+
+if [ -z "$PYTHON" ]; then
+  echo 'unable to find python in $PATH'
+  exit 1
+fi
+
+exec "$PYTHON" "$0.py" "$@"

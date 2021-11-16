@@ -1,0 +1,42 @@
+{
+  "bg": "bg.jpg",
+  "bg_bottom_color": "#b07bff",
+  "tasks": [
+    {
+      "name": "SIGN_IN",
+      "awards": 8,
+      "award_type": "diamand",
+      "award_text": "个钻石",
+      "award_icon": "diamand.png",
+      "icon": "icon_sign_in.png",
+      "btn_login": "btn_login.png",
+      "btn_do_it": "btn_sign_in.png",
+      "btn_get_award": "btn_get_award.png",
+      "btn_done": "btn_done.png"
+    },
+    {
+      "name": "CLICK_ITEM",
+      "awards": 80,
+      "award_type": "diamand",
+      "award_text": "个钻石",
+      "award_icon": "diamand.png",
+      "icon": "icon_click.png",
+      "btn_login": "btn_login.png",
+      "btn_do_it": "btn_do_it.png",
+      "btn_get_award": "btn_get_award.png",
+      "btn_done": "btn_done.png"
+    },
+    {
+      "name": "PAID_SUCCESS",
+      "awards": 800,
+      "award_type": "diamand",
+      "award_text": "个钻石",
+      "award_icon": "diamand.png",
+      "icon": "icon_buy.png",
+      "btn_login": "btn_login.png",
+      "btn_do_it": "btn_do_it.png",
+      "btn_get_award": "btn_get_award.png",
+      "btn_done": "btn_done.png"
+    }
+  ]
+}
