@@ -19,6 +19,15 @@ __jenova_prefined_libraries = ["OpenGL", "OpenGLES", "freetype", "box2d", "libbo
                                "libpng",
                                "libjpeg", "libfreetype"]
 
+__project_exported = []
+
+
+def add_target_to_exported(name):
+    if name in __project_exported:
+        return False
+    __project_exported.append(name)
+    return True
+
 
 def is_predefined_library(name):
     return name in __jenova_prefined_libraries
@@ -67,6 +76,15 @@ def remove_objc_flag(flags_expand):
     return flags_expand
 
 
+def copy_file_with_compare(from_path, to_path):
+    if not os.path.exists(from_path):
+        return
+    if not os.path.exists(to_path) or get_file_md5(to_path) != get_file_md5(from_path):
+        if os.path.exists(to_path):
+            os.remove(to_path)
+        shutil.copyfile(from_path, to_path)
+
+
 class ExportError(Exception):
     def __init__(self, expression, message):
         self.expression = expression
@@ -102,6 +120,7 @@ class XCodeSettingResolver(object):
         self._root_obj = root_obj
         self._target_configuration = target_configuration
         self._project_configuration = project_configuration
+        self._parent_setting = None
 
         if self._target_configuration is not None:
             self._target_setting = self._target_configuration.buildSettings
@@ -112,6 +131,13 @@ class XCodeSettingResolver(object):
             self._project_setting = self._project_configuration.buildSettings
         else:
             self._project_setting = None
+
+    def use_headermap(self):
+        return self._target_setting is None or not 'USE_HEADERMAP' in self._target_setting or self._target_setting[
+            'USE_HEADERMAP'] != 'NO'
+
+    def set_parent_setting(self, parent_setting):
+        self._parent_setting = parent_setting
 
     def get_target_setting(self):
         return self._target_setting
@@ -150,6 +176,50 @@ class XCodeSettingResolver(object):
         macro_list = XCodeSettingResolver._strip_macro_list(macro_list)
         return macro_list
 
+    def _resolve_in_parent_buildsetting(self, macro_label):
+        if self._parent_setting is not None:
+            if self._parent_setting._target_setting is not None and macro_label in self._parent_setting._target_setting:
+                return self._parent_setting._target_setting[macro_label]
+            return self._parent_setting._resolve_in_parent_buildsetting(macro_label)
+        else:
+            return None
+
+    def _resolve_next_macro(self, macro):
+        next_macro_start = macro.find('$(')
+        next_to_match = ')'
+        if next_macro_start < 0:
+            next_macro_start = macro.find('${')
+            next_to_match = '}'
+        if next_macro_start < 0:
+            return macro, False
+        next_macro_end = macro.find(next_to_match, next_macro_start)
+        if next_macro_end < 0:
+            return macro, False
+
+        macro_label = macro[next_macro_start + 2: next_macro_end]
+
+        if macro_label.lower() == "srcroot":
+            return macro[0:next_macro_start] + self._root_obj.get_xcode_project_root() + macro[
+                                                                                         next_macro_end + 1:], True
+        elif macro_label.lower() == "project_dir":
+            return macro[0:next_macro_start] + self._root_obj.get_xcode_project_dir() + macro[next_macro_end + 1:], True
+        elif macro_label.lower() == "pods_root":
+            return macro[0:next_macro_start] + self._root_obj.get_pods_root() + macro[next_macro_end + 1:], True
+        elif macro_label in self._target_setting:
+            return macro[0:next_macro_start] + self._target_setting[macro_label] + macro[next_macro_end + 1:], True
+
+        build_setting_resolve_result = self._resolve_in_parent_buildsetting(macro_label)
+        if build_setting_resolve_result is not None:
+            return macro[0:next_macro_start] + build_setting_resolve_result + macro[next_macro_end + 1:], True
+        else:
+            return macro, False
+
+    def _resolve_macro_internal(self, macro):
+        macro, success = self._resolve_next_macro(macro)
+        while success:
+            macro, success = self._resolve_next_macro(macro)
+        return macro
+
     def _resolve_in_project(self, label):
         if self._project_setting is None or self._project_setting[label] is None:
             return []
@@ -159,21 +229,15 @@ class XCodeSettingResolver(object):
 
         for i in range(0, len(macro_list)):
             macro = macro_list[i]
-            if macro.startswith('$(') or macro.startswith('${'):
-                if macro.lower() == "$(inherited)" or macro.lower() == "${inherited}":
-                    print("$(inherited) in project! this should not happen! ingore it!")
-                elif macro.lower().startswith("$(srcroot)") or macro.lower().startswith("${srcroot}"):
-                    # can not use join, as macro[len("$(srcroot)"):] may startswith /, and join will get an un
-                    # expected path.
-                    resolved_list.append(self._root_obj.get_xcode_project_root() + macro[len("$(srcroot)"):])
-                elif macro.lower().startswith("$(project_dir)") or macro.lower().startswith("${project_dir}"):
-                    resolved_list.append(self._root_obj.get_xcode_project_dir() + macro[len("$(project_dir)"):])
-                elif macro.lower().startswith("$(pods_root)") or macro.lower().startswith("${pods_root}"):
-                    resolved_list.append(self._root_obj.get_pods_root() + macro[len("${pods_root}"):])
+            macro = self._resolve_macro_internal(macro)
+            if macro is not None and len(macro.strip()) > 0:
+                macro_strip = macro.strip()
+                if (macro_strip.startswith('-l"') and macro_strip.endswith('"')) or (
+                        macro_strip.startswith("-l'") and macro_strip.endswith("'")):
+                    macro_strip = macro_strip[0:2] + macro_strip[3:len(macro_strip - 1)]
+                    resolved_list.append(macro_strip)
                 else:
-                    print("ingore macro: %s" % macro)
-            elif macro is not None and len(macro.strip()) > 0:
-                resolved_list.append(macro)
+                    resolved_list.append(macro)
         return resolved_list
 
     def resolve_macro(self, label):
@@ -185,22 +249,21 @@ class XCodeSettingResolver(object):
         macro_list = XCodeSettingResolver._strip_mac_and_change_to_list(self._target_setting[label])
         for i in range(0, len(macro_list)):
             macro = macro_list[i]
-            if macro.startswith('$(') or macro.startswith('${'):
-                if macro.lower() == "$(inherited)" or macro.lower() == "${inherited}":
-                    resolved_list_project = self._resolve_in_project(label)
-                    resolved_list = [*resolved_list, *resolved_list_project]
-                elif macro.lower().startswith("$(srcroot)") or macro.lower().startswith("${srcroot}"):
-                    # can not use join, as macro[len("$(srcroot)"):] may startswith /, and join will get an un
-                    # expected path.
-                    resolved_list.append(self._root_obj.get_xcode_project_root() + macro[len("$(srcroot)"):])
-                elif macro.lower().startswith("$(project_dir)") or macro.lower().startswith("${project_dir}"):
-                    resolved_list.append(self._root_obj.get_xcode_project_dir() + macro[len("$(project_dir)"):])
-                elif macro.lower().startswith("$(pods_root)") or macro.lower().startswith("${pods_root}"):
-                    resolved_list.append(self._root_obj.get_pods_root() + macro[len("${pods_root}"):])
-                else:
-                    print("ingore macro: %s" % macro)
-            elif macro is not None and len(macro.strip()) > 0:
-                resolved_list.append(macro)
+
+            if macro.lower() == "$(inherited)" or macro.lower() == "${inherited}":
+                resolved_list_project = self._resolve_in_project(label)
+                resolved_list = [*resolved_list, *resolved_list_project]
+            else:
+                macro = self._resolve_macro_internal(macro)
+                if macro is not None and len(macro.strip()) > 0:
+                    macro_strip = macro.strip()
+                    if (macro_strip.startswith('-l"') and macro_strip.endswith('"')) or (
+                            macro_strip.startswith("-l'") and macro_strip.endswith("'")):
+                        macro_strip = macro_strip[0:2] + macro_strip[3:len(macro_strip - 1)]
+                        resolved_list.append(macro_strip)
+                    else:
+                        resolved_list.append(macro)
+
         return resolved_list
 
     def resolve_pure_setting(self, label):
@@ -225,7 +288,13 @@ class XcodePathResolver(object):
         self._project = project
         self._hashid_to_parentgroup_mapping = {}
         groups = self._project.objects.get_objects_in_section('PBXGroup')
+
         for group in groups:
+            for child in group.children:
+                self._hashid_to_parentgroup_mapping[child] = group
+
+        variant_groups = self._project.objects.get_objects_in_section('PBXVariantGroup')
+        for group in variant_groups:
             for child in group.children:
                 self._hashid_to_parentgroup_mapping[child] = group
 
@@ -249,7 +318,12 @@ class XcodePathResolver(object):
                     is_ancestor_group_DEVELOPER_DIR = True
                     group_path = os.path.join(parent_group.path if parent_group.path is not None else "", group_path)
                     break
-                group_relpath = parent_group.get_actual_relpath()
+                group_relpath = None
+                if parent_group["isa"] == "PBXVariantGroup":
+                    if 'path' in parent_group:
+                        group_relpath = parent_group.path
+                else:
+                    group_relpath = parent_group.get_actual_relpath()
                 if group_relpath is not None and len(group_relpath) > 0:
                     group_path = group_relpath + "/" + group_path
                 ref_info = parent_group
@@ -260,7 +334,7 @@ class XcodePathResolver(object):
                 return os.path.join(group_path, path_info.path)
             else:
                 return os.path.abspath(
-                    os.path.join(self._root_obj.get_xcode_project_root(), group_path, path_info.path))
+                    os.path.join(self._root_obj.get_xcode_project_dir(), group_path, path_info.path))
 
         elif path_info.sourceTree == "SOURCE_TREE":
             return os.path.abspath(os.path.join(self._root_obj.get_xcode_project_dir(), path_info.path))
@@ -283,7 +357,6 @@ class TBJXCodeExporter(object):
         else:
             raise ExportError(True, 'invalid project path')
 
-        self._target_copy_include_dir = None
         self._xcode_project_file = os.path.join(self._xcode_project_dir, "project.pbxproj")
 
         self._project = XcodeProject.load(self._xcode_project_file)
@@ -292,6 +365,8 @@ class TBJXCodeExporter(object):
         self._xcode_root_object = XCodeProjectRootObject(self._xcode_project_dir, self._project_root)
         self._path_resolver = XcodePathResolver(self._xcode_root_object, self._project)
         self._setting_resolver = None
+        self._private_header_dirs = []
+        self._public_header_dirs = []
 
         self._export_config = "Release"
 
@@ -408,20 +483,31 @@ class TBJXCodeExporter(object):
         self._setting_resolver = XCodeSettingResolver(self._xcode_root_object, target_build_configuration,
                                                       project_build_configuration)
 
-        self._target_copy_include_dir = os.path.abspath(
-            os.path.join(self._cmake_output_dir, "gen_cmake_include_internal", stripped_name(self._export_target_name)))
-        ### rm include dir every time will make all files rebuild every time. so, keep it
-        # if os.path.exists(self._target_copy_include_dir):
-        #     if os.path.isdir(self._target_copy_include_dir):
-        #         shutil.rmtree(self._target_copy_include_dir)
-        #     else:
-        #         os.remove(self._target_copy_include_dir)
-        # os.makedirs(self._target_copy_include_dir)
-        if os.path.exists(self._target_copy_include_dir) and not os.path.isdir(self._target_copy_include_dir):
-            os.remove(self._target_copy_include_dir)
-        if not os.path.exists(self._target_copy_include_dir):
-            os.makedirs(self._target_copy_include_dir)
+        if self._setting_resolver.use_headermap():
+            self.collect_mapped_header(self._private_header_dirs)
         return self._export_config
+
+    def _collect_mapped_header_inner(self, obj_hashcode, collected_dirs):
+        obj = self._project.objects[obj_hashcode]
+        if obj is None:
+            return
+        if obj["isa"] == "PBXGroup" or obj["isa"] == "PBXVariantGroup":
+            for child_hash in obj["children"]:
+                self._collect_mapped_header_inner(child_hash, collected_dirs)
+        elif obj["isa"] == "PBXFileReference":
+            hash_codes = self.expand_groups_by_hashcode(obj_hashcode)
+            for hash_code in hash_codes:
+                filepath, brief_info = self.resolve_path_by_hashcode(hash_code)
+                if os.path.exists(filepath) and (filepath.lower().endswith(".h") or filepath.lower().endswith(".hpp")):
+                    header_dir = os.path.abspath(os.path.dirname(filepath))
+                    if not (header_dir in collected_dirs):
+                        collected_dirs.append(header_dir)
+
+    def collect_mapped_header(self, collected_dirs):
+        if not ('mainGroup' in self._project_root):
+            return
+        main_group = self._project_root["mainGroup"]
+        self._collect_mapped_header_inner(main_group, collected_dirs)
 
     def get_dependency_project_by_id(self, hashcode):
         dep = self._project.get_object(hashcode)
@@ -431,7 +517,12 @@ class TBJXCodeExporter(object):
         dep_brief_info_key = dep_proxy["containerPortal"]
         remote_target = dep_proxy["remoteGlobalIDString"]
         dep_brief_info = self._project.get_object(dep_brief_info_key)
-        dep_project_path = self._path_resolver.resolve_path(dep_brief_info)
+
+        dep_project_path = None
+        if dep_brief_info["isa"] == "PBXFileReference":
+            dep_project_path = self._path_resolver.resolve_path(dep_brief_info)
+        else:
+            dep_project_path = self._xcode_project_dir
 
         dep_exporter = TBJXCodeExporter(dep_project_path)
         dep_exporter.copy_global_configuration(self)
@@ -443,12 +534,33 @@ class TBJXCodeExporter(object):
         if dep_config is None:
             print("dependency project %s does not contain any config" % dep_name)
             exit(1)
+        dep_exporter._setting_resolver.set_parent_setting(self._setting_resolver)
         return dep_exporter
+
+    def expand_groups_by_hashcode(self, hashcode):
+        PBX_unknown_obj = self._project.get_object(hashcode)
+        brief_info = None
+        if PBX_unknown_obj["isa"] == "PBXFileReference":
+            brief_info = self._project.get_object(hashcode)
+        else:
+            PBXBuildFile_ref_hascode = PBX_unknown_obj.fileRef
+            brief_info = self._project.get_object(PBXBuildFile_ref_hascode)
+        if brief_info["isa"] == "PBXVariantGroup" or brief_info["isa"] == "PBXGroup":
+            expanded_hash_code = []
+            for child_hash_code in brief_info["children"]:
+                expanded = self.expand_groups_by_hashcode(child_hash_code)
+                expanded_hash_code += expanded
+            return expanded_hash_code
+        return [hashcode]
 
     def resolve_path_by_hashcode(self, hashcode):
         PBXBuildFile_obj = self._project.get_object(hashcode)
-        PBXBuildFile_ref_hascode = PBXBuildFile_obj.fileRef
-        brief_info = self._project.get_object(PBXBuildFile_ref_hascode)
+        brief_info = None
+        if PBXBuildFile_obj["isa"] == "PBXFileReference":
+            brief_info = self._project.get_object(hashcode)
+        else:
+            PBXBuildFile_ref_hascode = PBXBuildFile_obj.fileRef
+            brief_info = self._project.get_object(PBXBuildFile_ref_hascode)
         return self._path_resolver.resolve_path(brief_info), brief_info
 
     def _export_buildphase_source(self, f, target, buildPhase):
@@ -511,26 +623,27 @@ class TBJXCodeExporter(object):
             for file_hashcode in buildPhase.files:
                 filepath, _ = self.resolve_path_by_hashcode(file_hashcode)
                 if os.path.exists(filepath):
-                    to_file = os.path.join(self._target_copy_include_dir, os.path.basename(filepath))
-
-                    if not os.path.exists(to_file) or get_file_md5(to_file) != get_file_md5(filepath):
-                        shutil.copyfile(filepath, to_file)
+                    abs_dir_path = os.path.abspath(os.path.dirname(filepath))
+                    if not (abs_dir_path in self._public_header_dirs):
+                        self._public_header_dirs.append(abs_dir_path)
 
     def _export_buildphase_resource(self, f, target, buildPhase):
         if buildPhase.files and len(buildPhase.files) > 0:
-            for file_hashcode in buildPhase.files:
-                filepath, brief_info = self.resolve_path_by_hashcode(file_hashcode)
-                if os.path.exists(filepath):
-                    rel_filepath = os.path.relpath(filepath, self._cmake_output_dir)
+            for unknown_hashcode in buildPhase.files:
+                expanded_hashcode = self.expand_groups_by_hashcode(unknown_hashcode)
+                for file_hashcode in expanded_hashcode:
+                    filepath, brief_info = self.resolve_path_by_hashcode(file_hashcode)
+                    if os.path.exists(filepath):
+                        rel_filepath = os.path.relpath(filepath, self._cmake_output_dir)
 
-                    f.write("add_custom_command(TARGET %s POST_BUILD\n" % stripped_name(target.name))
-                    if os.path.isdir(filepath):
-                        f.write("\tCOMMAND ${CMAKE_COMMAND} -E copy_directory")
-                    else:
-                        f.write("\tCOMMAND ${CMAKE_COMMAND} -E copy\n")
-                    f.write("\t${CMAKE_CURRENT_SOURCE_DIR}/%s\n" % rel_filepath)
-                    f.write("\t${CMAKE_BINARY_DIR}/bin/%s\n" % brief_info.path)
-                    f.write(")\n")
+                        f.write("add_custom_command(TARGET %s POST_BUILD\n" % stripped_name(target.name))
+                        if os.path.isdir(filepath):
+                            f.write("\tCOMMAND ${CMAKE_COMMAND} -E copy_directory")
+                        else:
+                            f.write("\tCOMMAND ${CMAKE_COMMAND} -E copy\n")
+                        f.write("\t${CMAKE_CURRENT_SOURCE_DIR}/%s\n" % rel_filepath)
+                        f.write("\t${CMAKE_BINARY_DIR}/bin/%s\n" % brief_info.path)
+                        f.write(")\n")
 
     def _export_buildphase_framework(self, f, target, buildPhase):
         if buildPhase.files and len(buildPhase.files) > 0:
@@ -642,7 +755,7 @@ class TBJXCodeExporter(object):
             preprocessor_defines = " ".join(preprocessor_expand)
             if self._export_target_pch_additional_name is not None:
                 f.write('target_compile_definitions(%s PUBLIC %s)\n' % (
-                self._export_target_pch_additional_name, preprocessor_defines))
+                    self._export_target_pch_additional_name, preprocessor_defines))
 
             f.write('target_compile_definitions(%s PUBLIC %s)\n' % (stripped_name(target.name), preprocessor_defines))
 
@@ -660,11 +773,25 @@ class TBJXCodeExporter(object):
                 pch_location = resolved_prefix_header
             else:
                 pch_location = os.path.abspath(
-                    os.path.join(self._xcode_root_object.get_xcode_project_root(), resolved_prefix_header))
+                    os.path.join(self._xcode_root_object.get_xcode_project_dir(), resolved_prefix_header))
             rel_filepath = os.path.relpath(pch_location, self._cmake_output_dir)
             cmake_write_path = "${CMAKE_CURRENT_SOURCE_DIR}/%s" % rel_filepath
             f.write('\tPUBLIC %s\n' % cmake_write_path)
             f.write(')\n')
+
+        exported_search_dirs = {}
+        if len(self._public_header_dirs) > 0:
+            f.write('target_include_directories(%s PUBLIC\n' % stripped_name(target.name))
+            for solved_path in self._public_header_dirs:
+                if not os.path.isabs(solved_path):
+                    solved_path = os.path.join(self._xcode_root_object.get_xcode_project_dir(), solved_path)
+                if solved_path in exported_search_dirs:
+                    continue
+                exported_search_dirs[solved_path] = True
+                rel_filepath = os.path.relpath(solved_path, self._cmake_output_dir)
+                cmake_write_path = "${CMAKE_CURRENT_SOURCE_DIR}/%s" % rel_filepath
+                f.write('\t%s\n' % cmake_write_path)
+            f.write(')\n\n')
 
         header_search_expand = self._setting_resolver.resolve_macro("HEADER_SEARCH_PATHS")
         framework_search_expand = self._setting_resolver.resolve_macro("FRAMEWORK_SEARCH_PATHS")
@@ -673,39 +800,69 @@ class TBJXCodeExporter(object):
             user_header_search_expand = self._setting_resolver.resolve_macro("USER_HEADER_SEARCH_PATHS")
             merged_search_expand = [*merged_search_expand, *user_header_search_expand]
 
-        merged_search_expand.insert(0, self._target_copy_include_dir)
         if len(merged_search_expand) > 0:
             if self._export_target_pch_additional_name is not None:
                 f.write('target_include_directories(%s PUBLIC\n' % self._export_target_pch_additional_name)
                 for solved_path in merged_search_expand:
                     if not os.path.isabs(solved_path):
-                        solved_path = os.path.join(self._xcode_root_object.get_xcode_project_root(), solved_path)
+                        solved_path = os.path.join(self._xcode_root_object.get_xcode_project_dir(), solved_path)
                     rel_filepath = os.path.relpath(solved_path, self._cmake_output_dir)
                     cmake_write_path = "${CMAKE_CURRENT_SOURCE_DIR}/%s" % rel_filepath
                     f.write('\t%s\n' % cmake_write_path)
                 f.write(')\n\n')
 
-            f.write('target_include_directories(%s PUBLIC\n' % stripped_name(target.name))
+            write_header = False
             for solved_path in merged_search_expand:
                 if not os.path.isabs(solved_path):
-                    solved_path = os.path.join(self._xcode_root_object.get_xcode_project_root(), solved_path)
+                    solved_path = os.path.join(self._xcode_root_object.get_xcode_project_dir(), solved_path)
+                if solved_path in exported_search_dirs:
+                    continue
+                exported_search_dirs[solved_path] = True
+
+                if not write_header:
+                    write_header = True
+                    f.write('target_include_directories(%s PUBLIC\n' % stripped_name(target.name))
+
                 rel_filepath = os.path.relpath(solved_path, self._cmake_output_dir)
                 cmake_write_path = "${CMAKE_CURRENT_SOURCE_DIR}/%s" % rel_filepath
                 f.write('\t%s\n' % cmake_write_path)
-            f.write(')\n\n')
+            if write_header:
+                f.write(')\n\n')
+
+        if len(self._private_header_dirs) > 0:
+            write_header = False
+            for solved_path in self._private_header_dirs:
+                if not os.path.isabs(solved_path):
+                    solved_path = os.path.join(self._xcode_root_object.get_xcode_project_dir(), solved_path)
+                if solved_path in exported_search_dirs:
+                    continue
+                exported_search_dirs[solved_path] = True
+
+                if not write_header:
+                    write_header = True
+                    f.write('target_include_directories(%s PRIVATE\n' % stripped_name(target.name))
+
+                rel_filepath = os.path.relpath(solved_path, self._cmake_output_dir)
+                cmake_write_path = "${CMAKE_CURRENT_SOURCE_DIR}/%s" % rel_filepath
+                f.write('\t%s\n' % cmake_write_path)
+            if write_header:
+                f.write(')\n\n')
 
         libraries_search_expand = self._setting_resolver.resolve_macro("LIBRARY_SEARCH_PATHS")
         if len(libraries_search_expand) > 0:
             f.write('target_link_directories(%s PUBLIC\n' % stripped_name(target.name))
             for solved_path in libraries_search_expand:
                 if not os.path.isabs(solved_path):
-                    solved_path = os.path.join(self._xcode_root_object.get_xcode_project_root(), solved_path)
+                    solved_path = os.path.join(self._xcode_root_object.get_xcode_project_dir(), solved_path)
                 rel_filepath = os.path.relpath(solved_path, self._cmake_output_dir)
                 cmake_write_path = "${CMAKE_CURRENT_SOURCE_DIR}/%s" % rel_filepath
                 f.write('\t%s\n' % cmake_write_path)
             f.write(')\n\n')
 
     def _export_one_target(self, f, target):
+        if not add_target_to_exported(target.name):
+            return
+
         deps = target.dependencies
         if deps is not None and len(deps) > 0:
             for dep_hashcode in deps:
@@ -752,9 +909,9 @@ class TBJXCodeExporter(object):
     def export_cmake_dependencies(self, f):
         if self._export_target_pch_additional_name is not None:
             f.write('\nadd_dependencies(%s %s)\n' % (
-            stripped_name(self._export_target_name), self._export_target_pch_additional_name))
+                stripped_name(self._export_target_name), self._export_target_pch_additional_name))
             f.write('target_link_libraries(%s %s)\n' % (
-            stripped_name(self._export_target_name), self._export_target_pch_additional_name))
+                stripped_name(self._export_target_name), self._export_target_pch_additional_name))
 
         for target_name, deps in self.__cmake_dependency.items():
             f.write('\nadd_dependencies(%s' % stripped_name(target_name))
