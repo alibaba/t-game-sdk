@@ -25,18 +25,40 @@ def recursive_copy(src, dst, override, copy_call_back):
                 copy_call_back(src, dst)
 
 
-def copy_tao_tool():
-    tao_tool_dir = os.path.join(script_root, "tool")
+def copy_gles_header(emscripten_root):
+    gl_header_dir = os.path.abspath(os.path.join(emscripten_root, "cache", "sysroot", "include"))
+    duplicate_gl_dir = os.path.join(gl_header_dir, "OpenGLES")
+    if not os.path.exists(duplicate_gl_dir):
+        os.makedirs(duplicate_gl_dir)
+    duplicate_es2_dir = os.path.join(duplicate_gl_dir, "ES2")
+    duplicate_es3_dir = os.path.join(duplicate_gl_dir, "ES3")
+    if not os.path.exists(duplicate_es2_dir):
+        os.makedirs(duplicate_es2_dir)
+    if not os.path.exists(duplicate_es3_dir):
+        os.makedirs(duplicate_es3_dir)
 
-    def chmod_file(src_path, path):
-        if path.endswith(".py") and os.path.exists("%sc" % path):
-            os.remove("%sc" % path)
+    gles2_source_dir = os.path.join(gl_header_dir, "GLES2")
+    gles3_source_dir = os.path.join(gl_header_dir, "GLES3")
+    recursive_copy(gles2_source_dir, duplicate_es2_dir, True, None)
+    recursive_copy(gles3_source_dir, duplicate_es3_dir, True, None)
 
-        if not os.path.basename(path).startswith(".") and not path.endswith(".py"):
-            st = os.stat(path)
-            os.chmod(path, st.st_mode | stat.S_IEXEC)
+    source_gl2 = os.path.join(duplicate_es2_dir, "gl2.h")
+    source_gl2_ext = os.path.join(duplicate_es2_dir, "gl2ext.h")
+    if os.path.exists(source_gl2):
+        duplicate_gl = os.path.join(duplicate_es2_dir, "gl.h")
+        shutil.copyfile(source_gl2, duplicate_gl)
+    if os.path.exists(source_gl2_ext):
+        duplicate_gl_ext = os.path.join(duplicate_es2_dir, "glext.h")
+        shutil.copyfile(source_gl2_ext, duplicate_gl_ext)
 
-    recursive_copy(tao_tool_dir, emscripten_root, True, chmod_file)
+    source_gl3 = os.path.join(duplicate_es3_dir, "gl32.h")
+    source_gl3_ext = os.path.join(duplicate_es3_dir, "gl2ext.h")
+    if os.path.exists(source_gl3):
+        duplicate_gl = os.path.join(duplicate_es3_dir, "gl.h")
+        shutil.copyfile(source_gl2, duplicate_gl)
+    if os.path.exists(source_gl3_ext):
+        duplicate_gl_ext = os.path.join(duplicate_es3_dir, "glext.h")
+        shutil.copyfile(source_gl3_ext, duplicate_gl_ext)
 
 
 def auto_search_xcode_project(xcode_dir):
@@ -104,18 +126,22 @@ if __name__ == '__main__':
         exit(1)
 
     current_dir = os.getcwd()
+
+    def chmod_file(src_path, path):
+        if path.endswith(".py") and os.path.exists("%sc" % path):
+            os.remove("%sc" % path)
+
+        if not os.path.basename(path).startswith(".") and not path.endswith(".py"):
+            st = os.stat(path)
+            os.chmod(path, st.st_mode | stat.S_IEXEC)
+
+    recursive_copy(os.path.join(script_root, "emscripten"), emscripten_root, True, chmod_file)
+
     if os.path.exists(os.path.join(script_root, "..", "include")):
         recursive_copy(os.path.join(script_root, "..", "include"),
                        os.path.join(emscripten_root, "tao", "include"), True, None)
-    copy_tao_tool()
 
-    if os.path.exists(os.path.join(script_root, "emscripten_modified")):
-        recursive_copy(os.path.join(script_root, "emscripten_modified", "cache"), os.path.join(emscripten_root, "cache"), True, None)
-
-    if os.path.exists(os.path.join(script_root, "tools")):
-        recursive_copy(os.path.join(script_root, "tools"), os.path.join(emscripten_root, "tools"), True, None)
-    if os.path.exists(os.path.join(script_root, "src")):
-        recursive_copy(os.path.join(script_root, "src"), os.path.join(emscripten_root, "src"), True, None)
+    copy_gles_header(emscripten_root)
 
     if os.path.exists(os.path.join(script_root, "thirdparty", "get_thirdparty_header.py")):
         os.system("python3 %s" % os.path.abspath(os.path.join(script_root, "thirdparty", "get_thirdparty_header.py")))

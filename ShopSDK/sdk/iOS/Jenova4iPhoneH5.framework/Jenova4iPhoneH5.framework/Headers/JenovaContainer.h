@@ -10,6 +10,8 @@
 
 @interface JenovaContainer : NSObject
 
+@property (nonatomic, strong) NSString* bizId;
+
 - (instancetype) init __attribute__((unavailable("use initWithBizId")));
 - (instancetype) initWithBizId: (NSString*) bizId;
 - (void) setOrientation:(JenovaContainerOrientation)Orientation;

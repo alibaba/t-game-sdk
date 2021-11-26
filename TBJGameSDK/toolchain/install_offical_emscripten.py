@@ -55,13 +55,13 @@ if __name__ == '__main__':
     os.chdir(emsdk_dir)
     if platform.system() == "Windows":
         os.system("git pull")
-        copy_emscripten_dep_thirdparty(emsdk_dir)
+        # copy_emscripten_dep_thirdparty(emsdk_dir)
         os.system("./emsdk install %s" % emscripten_version)
         os.system("./emsdk activate %s" % emscripten_version)
         os.system("./emsdk_env.bat")
     else:
         os.system("git pull")
-        copy_emscripten_dep_thirdparty(emsdk_dir)
+        # copy_emscripten_dep_thirdparty(emsdk_dir)
         os.system("./emsdk install %s" % emscripten_version)
         os.system("./emsdk activate %s" % emscripten_version)
         os.system("source ./emsdk_env.sh")
