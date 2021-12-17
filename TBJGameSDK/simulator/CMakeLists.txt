@@ -7,6 +7,8 @@ project(TBJGameFramework)
 set(ProjectName TBJGameFramework)
 set(CMAKE_CXX_STANDARD 11)
 
+add_definitions(-DJENOVA_SDK -DJENOVA_SIMULATOR)
+
 option(TEST_EXE OFF)
 
 macro(source_group_by_dir source_files)
@@ -23,6 +25,14 @@ macro(source_group_by_dir source_files)
         source_group(${sgbd_group_name} FILES ${sgbd_file})
     endforeach(sgbd_file)
 endmacro(source_group_by_dir)
+
+macro(copy_framework_headers basepath headers)
+    foreach(sgbd_file ${${headers}})
+        get_filename_component(sgbd_dir ${sgbd_file} DIRECTORY)
+        file(RELATIVE_PATH rpath ${basepath} ${sgbd_dir})
+        set_property(SOURCE ${sgbd_file} PROPERTY MACOSX_PACKAGE_LOCATION Headers/${rpath})
+    endforeach(sgbd_file)
+endmacro(copy_framework_headers)
 
 macro(add_framework appname fwname)
     find_library(FRAMEWORK_${fwname}
@@ -56,7 +66,9 @@ include_directories(
 )
 
 if (${SIMULATOR_ENV} STREQUAL "Dev")
-    include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameSDK)
+	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../Thread)
+	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameSDK)
+	include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameHttp)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../taoemsdk/wasmruntime_simulator/thirdparty/libpng/include)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../taoemsdk/wasmruntime_simulator/thirdparty/libjpg/include)
     include_directories(${CMAKE_CURRENT_SOURCE_DIR}/../../taoemsdk/wasmruntime_simulator/thirdparty/libz/include)
@@ -93,12 +105,13 @@ set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -mcpu=native")
 
 file(GLOB_RECURSE SIMULATOR_OBJC "${CMAKE_CURRENT_SOURCE_DIR}/*.mm" "${CMAKE_CURRENT_SOURCE_DIR}/.m" "${CMAKE_CURRENT_SOURCE_DIR}/*.h")
 if (${SIMULATOR_ENV} STREQUAL "Dev")
-    file(GLOB_RECURSE TBJ_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameSDK/*.h")
+    set(PROJECT_HEADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameSDK")
 else()
-    file(GLOB_RECURSE TBJ_HEADER "${CMAKE_CURRENT_SOURCE_DIR}/../include/*.h")
+    set(PROJECT_HEADER_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../include")
 endif()
+file(GLOB_RECURSE TBJ_HEADER "${PROJECT_HEADER_ROOT}/*.h")
 
-set(TBJGameFramework_src 
+set(TBJGameFramework_src
     ${SIMULATOR_OBJC} 
     ${TBJ_HEADER}
     ${CMAKE_CURRENT_SOURCE_DIR}/TBJEnvContext.cpp
@@ -108,7 +121,17 @@ set(TBJGameFramework_src
     ${CMAKE_CURRENT_SOURCE_DIR}/TBJGameImageInternal.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/TBJGameFS.h
     ${CMAKE_CURRENT_SOURCE_DIR}/TBJGameFS.cpp
-        )
+    ${CMAKE_CURRENT_SOURCE_DIR}/TBJWWise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/TBJWWiseTest.cpp
+)
+
+if (${SIMULATOR_ENV} STREQUAL "Dev")
+    file(GLOB_RECURSE TBJGameHttp_src "${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameHttp/*.cpp" "${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameHttp/*.h" "${CMAKE_CURRENT_SOURCE_DIR}/../TBJGameHttp/*.mm")
+    list(APPEND TBJGameFramework_src ${TBJGameHttp_src})
+else()
+    list(APPEND TBJGameFramework_src ${CMAKE_CURRENT_SOURCE_DIR}/TBJGameHttp_Internal.cpp)
+    list(APPEND TBJGameFramework_src ${CMAKE_CURRENT_SOURCE_DIR}/TBJHttpCallbackManager.cpp)
+endif()
 
 if (TEST_EXE)
     list(APPEND TBJGameFramework_src
@@ -119,22 +142,22 @@ endif()
 source_group_by_dir(TBJGameFramework_src)
 
 if (TEST_EXE)
+    copy_framework_headers(${PROJECT_HEADER_ROOT} TBJGameFramework_src)
     add_executable(${ProjectName} ${TBJGameFramework_src})
     set_target_properties(${ProjectName} PROPERTIES
         MACOSX_BUNDLE_GUI_IDENTIFIER com.alibaba.jenova
         VERSION 16.4.0
         SOVERSION 1.0.0
-        PUBLIC_HEADER "${TBJGameFramework_header}"
         # XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
     )
 else()
+    copy_framework_headers(${PROJECT_HEADER_ROOT} TBJ_HEADER)
     add_library(${ProjectName} SHARED ${TBJGameFramework_src})
     set_target_properties(${ProjectName} PROPERTIES
         FRAMEWORK TRUE
         MACOSX_FRAMEWORK_IDENTIFIER com.alibaba.jenova
         VERSION 16.4.0
         SOVERSION 1.0.0
-        PUBLIC_HEADER "${TBJ_HEADER}"
         # XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY "iPhone Developer"
     )
 endif()

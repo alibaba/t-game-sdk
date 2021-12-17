@@ -52,7 +52,7 @@ if __name__ == '__main__':
 	install_dir = os.path.join(script_root)
 	local_zip = os.path.join(install_dir, "thirdparty.zip")
 	os.chdir(install_dir)
-	download("http://jenova-public.cn-hangzhou.oss-cdn.aliyun-inc.com/ios_framework_dep/thirdparty.zip", local_zip)
+	download("http://jenova-public.oss-cn-zhangjiakou.aliyuncs.com/ios_framework_dep/thirdparty.zip", local_zip)
 	os.system("unzip thirdparty.zip")
 	if os.path.exists(os.path.join(install_dir, "__MACOSX")):
 		shutil.rmtree(os.path.join(install_dir, "__MACOSX"))

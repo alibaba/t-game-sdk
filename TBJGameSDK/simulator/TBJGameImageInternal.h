@@ -38,5 +38,6 @@ void TBJGameReleaseImage_Internal(TBJImageInternal* image);
 
 void glTexTBJImage2D_Internal(int target, int level, unsigned int glTextureId, TBJImageInternal *image);
 
+void glTexTBJSubImage2D_Internal(int target, int level, int offsetX, int offsetY, int width, int height, TBJImageInternal* image);
 
 #endif /* TBJGameImageInternal_h */

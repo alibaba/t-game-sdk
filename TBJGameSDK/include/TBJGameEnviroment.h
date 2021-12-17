@@ -100,6 +100,9 @@ void TBJGameSetGameLoop(TBJGameLoop gameLoop);
 void TBJGameSetEventListener(TBJGameEventListener eventListener);
 void TBJGameExit();
 void TBJGameSwapBuffers(unsigned long long surfaceId);
+int TBJGameGetDefaultFrameBuffer(unsigned long long surfaceId);
+int TBJGameGetDefaultColorBuffer(unsigned long long surfaceId);
+int TBJGameGetDefaultDepthBuffer(unsigned long long surfaceId);
 int TBJGameGetFrameWidth(unsigned long long surfaceId);
 int TBJGameGetFrameHeight(unsigned long long surfaceId);
 void TBJGameSetFrameSize(unsigned long long surfaceId, int width, int height);
@@ -115,6 +118,7 @@ void TBJGameStoreKeyValue(unsigned long long surfaceId, const char* key, const c
 void TBJGameRemoveStoreKey(unsigned long long surfaceId, const char* key);
 const char* TBJGameGetStoreValue(unsigned long long surfaceId, const char* key);
 void TBJGameClearStore(unsigned long long surfaceId);
+const char* TBJGameGetCookie(unsigned long long surfaceId);
 
 // Call in any thread
 int TBJGameGetPathStatus(const char* path); // 0: not exist, 1: file, 2: dir

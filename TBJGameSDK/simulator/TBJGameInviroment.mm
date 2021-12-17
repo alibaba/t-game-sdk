@@ -69,6 +69,19 @@ void TBJGameSwapBuffers(unsigned long long surfaceId)
     }
 }
 
+int TBJGameGetDefaultFrameBuffer(unsigned long long surfaceId)
+{
+    return tbjGlobalInstance->getDefaultFrameBuffer();
+}
+int TBJGameGetDefaultColorBuffer(unsigned long long surfaceId)
+{
+    return tbjGlobalInstance->getDefaultColorBuffer();
+}
+int TBJGameGetDefaultDepthBuffer(unsigned long long surfaceId)
+{
+    return tbjGlobalInstance->getDefaultDepthBuffer();
+}
+
 int TBJGameGetFrameWidth(unsigned long long surfaceId)
 {
     TBJGameView* gameView = (__bridge TBJGameView*)(tbjGlobalInstance->getEnvContext()->getNativeContext());

@@ -32,7 +32,7 @@ typedef struct TBJImage
 TBJImage* TBJGameLoadImage(const char* path);
 TBJImage* TBJGameLoadImageFromData(const char* data, int size);
 void glTexTBJImage2D(int target, int level, int glTextureId, TBJImage* image);
-int glTexTBJSubImage2D(int target, int level, int offsetX, int offsetY, int width, int height, TBJImage* image);
+void glTexTBJSubImage2D(int target, int level, int offsetX, int offsetY, int width, int height, TBJImage* image);
 void TBJGameReleaseImage(TBJImage* image);
 void TBJGameReleaseImageCpuMemory(TBJImage* image);
 void TBJGameReLoadImage(TBJImage* image);

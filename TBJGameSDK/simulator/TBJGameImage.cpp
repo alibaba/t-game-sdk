@@ -105,3 +105,10 @@ void TBJGameReLoadImage(TBJImage *image) {
     fread(content, 1, size, f);
     TBJGameLoadImageFromData(content, size);
 }
+
+void glTexTBJSubImage2D(int target, int level, int offsetX, int offsetY, int width, int height, TBJImage* image) {
+    if (image != nullptr) {
+        TBJImageInternal* imageInternal = (TBJImageInternal*) image;
+        glTexTBJSubImage2D_Internal(target, level, offsetX, offsetY, imageInternal->image.width, imageInternal->image.height, imageInternal);
+    }
+}

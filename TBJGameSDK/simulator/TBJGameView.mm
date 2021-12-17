@@ -141,6 +141,15 @@
         [self addSubview:_fpsView];
     }
     
+    if ([bundlePath characterAtIndex:([bundlePath length] - 1)] != '/')
+    {
+        bundlePath = [bundlePath stringByAppendingString:@"/"];
+    }
+    if ([appPath characterAtIndex:([appPath length] - 1)] != '/')
+    {
+        appPath = [appPath stringByAppendingString:@"/"];
+    }
+    
     TBJEnvContext* envContext = new TBJEnvContext();
     envContext->setNativeContext((__bridge void*)self);
     envContext->setGameRootPath([bundlePath UTF8String]);

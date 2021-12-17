@@ -67,12 +67,12 @@ struct __pthread
 {
     unsigned long long native_pthread_t[2];   // native pthread_t; posix is unsigned long, windows's size if (unsigned long long + unsigned int)
 
-    int stack;
+    long long stack;
+    long long start_param;
+    unsigned long long native_runtime;
 	int stack_size;
 	int start;
-	int start_param;
 	int result;
-	unsigned long long native_runtime;
 
     JENOVA_DEFINE_PTR(struct __pthread*, self);
     JENOVA_DEFINE_PTR(void**, dtv);

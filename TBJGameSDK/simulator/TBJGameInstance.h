@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include "TBJGameEnviroment.h"
+#include "TBJHttpCallbackManager.h"
 
 class TBJEnvContext;
 class TBJStorageContext;
@@ -37,6 +38,12 @@ public:
     inline void setGameLoop(TBJGameLoop gameLoop) { mGameLoop = gameLoop; }
     inline void setEventListener(TBJGameEventListener evtListener) { mEventListener = evtListener; }
     
+    inline unsigned int getDefaultFrameBuffer() { return mDefaultFrameBuffer; }
+    inline unsigned int getDefaultColorBuffer() { return mDefaultColorBuffer; }
+    inline unsigned int getDefaultDepthBuffer() { return mDefaultDepthBuffer; }
+    
+    TBJHttpCallbackManager mHttpCallbackManager;
+
 private:
     TBJEnvContext* mEnvContext = nullptr;
     TBJStorageContext* mStorageContext = nullptr;

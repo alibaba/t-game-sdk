@@ -22,6 +22,16 @@ __jenova_prefined_libraries = ["OpenGL", "OpenGLES", "freetype", "box2d", "libbo
 # ingore CMake generate target name and WasmSimulator
 __project_wasm_builtin_projects = ['ZERO_CHECK', 'ALL_BUILD', 'TBJGameFramework']
 __project_exported = ['ZERO_CHECK', 'ALL_BUILD', 'TBJGameFramework']
+__predefined_simulator_macro = ['JENOVA_SIMULATOR', '-DJENOVA_SIMULATOR']
+
+
+def remove_simulator_builtin_macro(macros):
+    macros_filtered = []
+    for macro in macros:
+        if macro in __predefined_simulator_macro:
+            continue
+        macros_filtered.append(macro)
+    return macros_filtered
 
 
 def add_target_to_exported(name):
@@ -758,6 +768,7 @@ class TBJXCodeExporter(object):
 
     def _export_private_compile_preprocessor(self, f, target):
         preprocessor_expand = self._setting_resolver.resolve_macro("GCC_PREPROCESSOR_DEFINITIONS")
+        preprocessor_expand = remove_simulator_builtin_macro(preprocessor_expand)
         if len(preprocessor_expand) > 0:
             preprocessor_defines = " ".join(preprocessor_expand)
             if self._export_target_pch_additional_name is not None:

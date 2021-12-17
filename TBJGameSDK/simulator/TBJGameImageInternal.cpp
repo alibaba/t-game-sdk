@@ -405,3 +405,9 @@ void glTexTBJImage2D_Internal(int target, int level, unsigned int glTextureId, T
                      image->decodeData);             // pixel data
     }
 }
+
+void glTexTBJSubImage2D_Internal(int target, int level, int offsetX, int offsetY, int width, int height, TBJImageInternal* image) {
+    if (!image->compressed) {
+        glTexSubImage2D(target, level, offsetX, offsetY, image->image.width, image->image.height, image->glInternalFormat, image->glTexture2dType, image->decodeData);
+    }
+}

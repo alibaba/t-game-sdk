@@ -5,39 +5,58 @@
 #ifndef WASMGAMECONTAINER_TBJGAMEHTTP_H
 #define WASMGAMECONTAINER_TBJGAMEHTTP_H
 
+#include "TBJGameMacro.h"
+
 TAOBAO_NS_BEGIN
 
-struct WasmHttpRequest;
+struct TBJHttpRequest;
 
-typedef enum Method {
+typedef enum TBJMethod {
     GET,
     POST,
     PUT,
     DELETE,
     UNKNOWN,
-};
+} TBJMethod;
 
-typedef struct WasmHttpRequest* WasmHttpRequestp;
+typedef struct TBJHttpRequest* TBJHttpRequestp;
 
-typedef struct HttpResponse {
-    WasmHttpRequest *httpRequest;
+typedef struct TBJHttpResponse {
+    TBJHttpRequestp httpRequest;
     int code;
-    char *msg;
-    char *data;
+    const char *msg;
+    const char *data;
+    void* userData;
+    void* tmpUserBuffer;
+    int tmpUserBufferSize;
+    int dataLen;
     bool success;
-};
+} TBJHttpResponse;
 
-typedef void (*onResponseCallback)(HttpResponse response);
+typedef enum TBJHttpStage {
+    OnReceivedData,
+    OnReceivedResponse,
+    OnRequestComplete,
+    OnRequestError
+} TBJHttpStage;
 
-WasmHttpRequestp newRequest();
-void freeRequest(WasmHttpRequestp p);
+typedef struct TBJHttpResponse* TBJHttpResponsep;
+typedef void (*TBJResponseCallback)(TBJHttpResponsep response, TBJHttpStage stage);
 
-void wasmAddUrl(WasmHttpRequestp httpRequest, const char* url);
-void wasmAddHeader(WasmHttpRequestp httpRequest, const char *key, const char *value);
-void wasmAddContent(WasmHttpRequestp httpRequest, const char* body);
-void wasmSend(Method method, WasmHttpRequestp p, onResponseCallback callBack);
+TBJHttpRequestp TBJNewHttpRequest(const char* url, TBJMethod method);
+void TBJFreeHttpRequest(TBJHttpRequestp p);
 
-const char* wasmGetUrl(WasmHttpRequestp httpRequest);
+void TBJAddHeader(TBJHttpRequestp httpRequest, const char *key, const char *value);
+void TBJAddContent(TBJHttpRequestp httpRequest, const char* body, int size);
+void TBJSendRequest(TBJHttpRequestp p, TBJResponseCallback callBack);
+TBJHttpResponsep TBJSyncSendRequest(TBJHttpRequestp p);
+
+void TBJHttpSetUserData(TBJHttpRequestp httpRequest, void* userData);
+void TBJHttpSetTimeout(TBJHttpRequestp httpRequest, int timeout);
+void TBJSetHttpAuth(TBJHttpRequestp httpRequest, const char *username, const char *password);
+const char* TBJGetRequestUrl(TBJHttpRequestp httpRequest);
+TBJHttpResponsep TBJGetResponse(TBJHttpRequestp httpRequest);
+const char* TBJGetResponseHeader(TBJHttpRequestp httpRequest, const char *key);
 
 TAOBAO_NS_END
 #endif //WASMGAMECONTAINER_TBJGAMEHTTP_H
