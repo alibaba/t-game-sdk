@@ -358,7 +358,7 @@ class Library:
         cmd += cflags
       commands.append(cmd + ['-fno-builtin-function', '-c', src, '-o', o])
       objects.append(o)
-      print("building " + o)
+      # print("building " + o)
     run_build_commands(commands)
     return objects
 
@@ -717,7 +717,7 @@ class libc(AsanInstrumentedLibrary, MuslInternalLibrary, MTLibrary):
         'exp.c', 'expf.c', 'exp2.c', 'exp2f.c',
         'pow.c', 'powf.c',
         'fmod.c', 'fmodf.c', 'fmodl.c',
-        'qsort.c',
+        'qsort.c', 'getcwd.c', 'fdatasync.c', 'getuid.c', 'geteuid.c',
         # 'process' exclusion
         'fork.c', 'vfork.c', 'posix_spawn.c', 'posix_spawnp.c', 'execve.c', 'waitid.c', 'system.c'
     ]
@@ -753,7 +753,14 @@ class libc(AsanInstrumentedLibrary, MuslInternalLibrary, MTLibrary):
           'pthread_join.c',
           'pthread_testcancel.c',
           'emscripten_proxy_main.c',
-          'emscripten_thread_state.S',
+          'emscripten_thread_state.S'
+        ])
+
+      #jenova
+      libc_files += files_in_path(
+        path='system/lib/libc/musl/src/thread',
+        filenames=[
+          'pthread_setschedparam.c'
         ])
     else:
       ignore += ['thread']
@@ -785,6 +792,8 @@ class libc(AsanInstrumentedLibrary, MuslInternalLibrary, MTLibrary):
           'thrd_join.c',
           'thrd_sleep.c',
           'thrd_yield.c',
+          #jenova,
+          'pthread_setschedparam.c'
         ])
       libc_files += files_in_path(
         path='system/lib/pthread',
@@ -818,7 +827,9 @@ class libc(AsanInstrumentedLibrary, MuslInternalLibrary, MTLibrary):
           'ctime.c',
           'gmtime.c',
           'localtime.c',
-          'nanosleep.c'
+          'nanosleep.c',
+          # jenova
+          '__asctime.c',
         ])
     libc_files += files_in_path(
         path='system/lib/libc/musl/src/legacy',
@@ -880,6 +891,14 @@ class libc(AsanInstrumentedLibrary, MuslInternalLibrary, MTLibrary):
           'pthread_sigmask.c',
           'emscripten_console.c',
         ])
+    #jenova
+    libc_files += files_in_path(
+      path='system/lib/libc/musl/src/aio',
+      filenames=[
+        'aio_suspend.c',
+        'aio.c',
+        'lio_listio.c'
+      ])
 
     libc_files += files_in_path(
         path='system/lib/pthread',
@@ -1463,7 +1482,10 @@ class libstandalonewasm(MuslInternalLibrary):
                    'gmtime_r.c',
                    'localtime_r.c',
                    'mktime.c',
-                   'time.c'])
+                   'time.c',
+                   #jenova
+                   'timegm.c',
+                   'strptime.c'])
     # It is more efficient to use JS for __assert_fail, as it avoids always
     # including fprintf etc.
     files += files_in_path(

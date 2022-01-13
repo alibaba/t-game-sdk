@@ -23,6 +23,8 @@ void TBJStorageContext::putValue(const char* key, const char* value)
         init();
     }
     
+    mFetchCache[key] = std::make_pair(value, true);
+    
     int ok = sqlite3_bind_text((sqlite3_stmt*)mUpdate, 1, key, -1, SQLITE_TRANSIENT);
     ok |= sqlite3_bind_text((sqlite3_stmt*)mUpdate, 2, value, -1, SQLITE_TRANSIENT);
 
@@ -34,6 +36,12 @@ void TBJStorageContext::putValue(const char* key, const char* value)
 }
 const char* TBJStorageContext::getValue(const char* key)
 {
+    auto iter = mFetchCache.find(key);
+    if (iter != mFetchCache.end())
+    {
+        return iter->second.second ? iter->second.first.c_str() : NULL;
+    }
+    
     if (!mInited)
     {
         init();
@@ -47,20 +55,29 @@ const char* TBJStorageContext::getValue(const char* key)
     if (ok != SQLITE_OK && ok != SQLITE_DONE && ok != SQLITE_ROW)
     {
         printf("Error in WasmStorageContext::getValue(%s)\n", key);
+        mFetchCache.insert(std::make_pair(key, std::make_pair("", false)));
         return nullptr;
     }
     else if (!text)
     {
+        mFetchCache.insert(std::make_pair(key, std::make_pair("", false)));
         return nullptr;
     }
     else
     {
+        mFetchCache.insert(std::make_pair(key, std::make_pair(reinterpret_cast<const char*>(text), true)));
         return reinterpret_cast<const char*>(text);
     }
 }
 
 void TBJStorageContext::removeKey(const char *key)
 {
+    auto iter = mFetchCache.find(key);
+    if (iter != mFetchCache.end())
+    {
+        mFetchCache.erase(iter);
+    }
+    
     int ok = sqlite3_bind_text((sqlite3_stmt*)mRemove, 1, key, -1, SQLITE_TRANSIENT);
     
     ok |= sqlite3_step((sqlite3_stmt*)mRemove);
@@ -79,6 +96,7 @@ void TBJStorageContext::clear()
 
 void TBJStorageContext::init()
 {
+    mFetchCache.clear();
     if (mInited) return;
     mInited = true;
     
@@ -119,6 +137,7 @@ void TBJStorageContext::deinit()
 {
     if (mInited)
     {
+        mFetchCache.clear();
         mInited = false;
         
         sqlite3_finalize((sqlite3_stmt*)mSelect);

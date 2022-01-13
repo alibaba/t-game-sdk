@@ -69,6 +69,7 @@ typedef struct TBJGameGroundEvent
 #define TAOBAO_SYSCALL_PREDESTROY 1
 #define TAOBAO_SYSCALL_PAUSE 2
 #define TAOBAO_SYSCALL_RESUME 3
+#define TAOBAO_SYSCALL_NETWORK_STATUS_CHANGED 4
 
 typedef struct TBJGameSystemCallEvent
 {
@@ -79,6 +80,7 @@ typedef struct TBJGameSystemCallEvent
             unsigned int width;
             unsigned int height;
         } frameSize;
+        int networkStatus;
     };
 } TBJGameSystemCallEvent;
 
@@ -91,6 +93,12 @@ typedef union TBJGameEvent
     TBJGameGroundEvent ground;
     TBJGameSystemCallEvent systemCall;
 } TBJGameEvent;
+
+#define TAOBAO_NETWORK_NOTREACHABLE     0
+#define TAOBAO_NETWORK_WIFI             1
+#define TAOBAO_NETWORK_2G               2
+#define TAOBAO_NETWORK_3G               3
+#define TAOBAO_NETWORK_4G               4
 
 typedef void (*TBJGameLoop)(float time);
 typedef void (*TBJGameEventListener)(const TBJGameEvent* evt);
@@ -119,6 +127,7 @@ void TBJGameRemoveStoreKey(unsigned long long surfaceId, const char* key);
 const char* TBJGameGetStoreValue(unsigned long long surfaceId, const char* key);
 void TBJGameClearStore(unsigned long long surfaceId);
 const char* TBJGameGetCookie(unsigned long long surfaceId);
+int TBJGameGetNetworkStatus(unsigned long long surfaceId);
 
 // Call in any thread
 int TBJGameGetPathStatus(const char* path); // 0: not exist, 1: file, 2: dir

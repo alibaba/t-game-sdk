@@ -101,8 +101,6 @@ if __name__ == '__main__':
     parser.add_argument('-g', dest='keep_symbols', action='store_true', help='wasm keep symbols')
     parser.add_argument('-d', dest='debug_mode', action='store_true', help='do not use ir opt (-Os)')
     parser.add_argument('--wat', dest="generate_wat", action='store_true', help='generate wat if found wasm2wat tool')
-    parser.add_argument('--native_print', dest="use_native_print", action='store_true',
-                        help='use native printf instead of wasm print. Not fully supported, Not support printf long long currently!');
     # parser.add_argument('rest', nargs=argparse.REMAINDER) # this is an alterative choice
     parser.add_argument('--no_use', dest="no_use", action="store", help='----separator: the option below is for xcodeproject -----------')
     ########### xcode project configs ##########
@@ -221,11 +219,8 @@ if __name__ == '__main__':
     compile_flag_pre = taoflag.get_emcc_compile_flag(args.debug_mode, args.keep_symbols)
     link_flag = taoflag.get_emcc_link_flag()
 
-    printf_define = ""
-    if args.use_native_print:
-        printf_define = "-DJENOVA_USE_NATIVE_PRINT"
-    compile_flag = "%s %s %s %s" % (
-        compile_flag_pre, printf_define, custom_flag, get_precompiled_library_flag(emscripten_root, used_libraries))
+    compile_flag = "%s %s %s" % (
+        compile_flag_pre, custom_flag, get_precompiled_library_flag(emscripten_root, used_libraries))
 
     cpu_count = multiprocessing.cpu_count()
 

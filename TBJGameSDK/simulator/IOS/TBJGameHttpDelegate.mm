@@ -30,15 +30,14 @@
 
 @interface TBJGameNSURLDelegateTask : NSObject<NSURLConnectionDelegate>{
     std::shared_ptr<TBJGameHttpTask> _task;
-    NSFileHandle *_localFile;
-    BOOL _needRefreshETag;
 }
 
+@property(nonatomic) NSOperationQueuePriority priority;
+
+@property (nonatomic) NSInteger contentLength;
+
 @property(nonatomic, strong) NSString* url;
-@property(nonatomic, strong) NSString* LocalPath;
 @property(nonatomic, strong) NSURLConnection* Connection;
-@property(nonatomic, strong) NSString* ETag;
-@property(nonatomic, strong) NSString* LastModify;
 
 @property (strong) NSMutableData *responseData;
 @property (readonly) NSInteger responseCode;
@@ -54,53 +53,96 @@
 
 @end
 
+@interface TBJGameHttpOperation : NSOperation {
+@public
+    TBJGameNSURLDelegateTask *delegateTask;
+}
+@end
+
+@implementation TBJGameHttpOperation
+-(void) main
+{
+    [[NSThread currentThread] setName:@"tbjgame http thread"];
+    
+    NSRunLoop* curRunLoop = [NSRunLoop currentRunLoop];
+    
+    TBJGameNSURLDelegateTask* task = self -> delegateTask;
+    
+    if ([[TBJGameHttpDelegator shareInstance] willStop]) {
+        return;
+    }
+    
+    if ([task getNativeTask]->httpReq) {
+        [task startHttpTask];
+    } else {
+        [task startDownloadTask];
+    }
+    
+    [curRunLoop run];
+    NSLog(@"current runloop exit, %@\n", [[NSThread currentThread] name]);
+}
+@end
+
 @implementation TBJGameNSURLDelegateTask
+
+
+-(void) handleResult {
+    NSLog(@"task enter result handler");
+
+    if ([self getNativeTask]->downloadTask != nullptr) {
+        uint8_t length = (size_t)([[self responseData] length]);
+        TBJGameFSNS::Buffer buffer(length);
+        memcpy(buffer.getData(), ([self responseData].mutableBytes), length);
+
+        [self getNativeTask]->downloadTask->onFinishedDownload(std::move(buffer), [self getNativeTask]->localPath, [self getNativeTask]->index, (int) [self responseCode] == 200 ? 0 : -1);
+    }
+
+    if ([self getNativeTask] -> httpReq) {
+        TBJHttpResponse* response = &([self getNativeTask]->httpRequstInternalp->responseInternal.response);
+
+        int len = strlen([[self statusString] UTF8String]);
+        if (len > 0) {
+            char* tmpMsg = (char*) malloc(len + 1);
+            memcpy((void *) tmpMsg, [[self statusString] UTF8String], len);
+            tmpMsg[len] = 0;
+            response->msg = tmpMsg;
+        }
+        response->dataLen = (int)([[self responseData] length]);
+        if (response->dataLen > 0) {
+            response->data = (const char*)malloc(response->dataLen);
+            memcpy((void *)response->data, ([self responseData].mutableBytes), response->dataLen);
+        }
+        response->success = ((int)[self responseCode] == 200);
+        response->code = (int)[self responseCode];
+    }
+
+    if ([self getNativeTask] -> httpResponseCallback != nullptr) {
+        TBJResponseCallback responseCallback = [self getNativeTask]->httpResponseCallback;
+        TBJHttpResponseInternal* response = &([self getNativeTask]->httpRequstInternalp->responseInternal);
+#ifdef JENOVA_SIMULATOR
+        TBJGameInstance* gameInstance = (TBJGameInstance* )[self getNativeTask]->httpRequstInternalp-> gameInstance;
+
+        TBJHttpStage stage = response->response.success ? TBJHttpStage::OnRequestComplete : TBJHttpStage::OnRequestError;
+        gameInstance -> mHttpCallbackManager.readyToInvoke(response, responseCallback, stage);
+#else
+        WasmGameInstance* gameInstance = (WasmGameInstance* )[self getNativeTask]->httpRequstInternalp-> gameInstance;
+
+        TBJHttpStage stage = response->response.success ? TBJHttpStage::OnRequestComplete : TBJHttpStage::OnRequestError;
+        gameInstance -> mHttpCallbackManager.readyToInvoke(response, responseCallback, stage);
+#endif
+    }
+}
 
 -(std::shared_ptr<TBJGameHttpTask>) getNativeTask {
     return _task;
 }
 
 -(void)startDownloadTask {
-    _localFile = NULL;
     self.responseData = NULL;
-    
-    NSString* parentPath = [self.LocalPath stringByDeletingLastPathComponent];
-    NSFileManager* fm =[NSFileManager defaultManager];
-    if(![fm fileExistsAtPath:parentPath]) {
-        [fm createDirectoryAtPath:parentPath withIntermediateDirectories:YES attributes:nil error:nil];
-    }
-    
-    NSString* localMD5Path = [NSString stringWithFormat:@"%@.version", self.LocalPath];
-    
-    //read local etag
-    FILE* localMD5File = fopen([localMD5Path UTF8String], "r");
-    if(localMD5File) {
-        struct stat st;
-        int ret = stat([localMD5Path UTF8String], &st);
-        if(ret != -1) {
-            void* local_data = malloc(st.st_size);
-            fread(local_data, st.st_size, 1, localMD5File);
-            fclose(localMD5File);
-            
-            NSDictionary* data_dic = [NSJSONSerialization JSONObjectWithData:[NSData dataWithBytes:local_data length:st.st_size] options:0 error:nil];
-            
-            self.ETag = data_dic[@"ETag"];
-            self.LastModify = data_dic[@"LastModify"];
-        }
-    }
     
     //start to download file
     NSURLRequest *request = [NSURLRequest requestWithURL:[NSURL URLWithString:self.url] cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData timeoutInterval:5.0];
     
-    
-    //set etag
-    if(self.ETag && self.LastModify) {
-        NSMutableURLRequest* request_muta = [request mutableCopy];
-        //[request setValue:self.ETag for:@"If-None-Match"];
-        [request_muta setValue:self.ETag forHTTPHeaderField:@"If-None-Match"];
-        [request_muta setValue:self.LastModify forHTTPHeaderField:@"If-Modified-Since"];
-        request = [request_muta copy];
-    }
     
     self.Connection = [[NSURLConnection alloc]initWithRequest:request delegate:self startImmediately:NO];
     
@@ -136,9 +178,8 @@
     }
     
     //create request with url
-    NSString* urlstring = [NSString stringWithUTF8String:_task -> httpRequstInternalp->request.url.c_str()];
-    NSURL *url = [NSURL URLWithString:urlstring];
-    
+    self.url = [NSString stringWithUTF8String:_task -> httpRequstInternalp->request.url.c_str()];
+    NSURL *url = [NSURL URLWithString:self.url];
     NSMutableURLRequest *nsrequest = [NSMutableURLRequest requestWithURL:url
                                                              cachePolicy:NSURLRequestReloadIgnoringLocalAndRemoteCacheData
                                                          timeoutInterval:_task -> httpRequstInternalp->request.timeout];
@@ -183,23 +224,6 @@
     [self.Connection start];
 }
 
--(void)refreshETag {
-    if(_needRefreshETag) {
-        if(_task->status == TBJGameHttpTask::Status::Finished){
-            if(self.ETag && self.LastModify) {
-                NSString* localMD5Path = [NSString stringWithFormat:@"%@.version", self.LocalPath];
-                FILE* localMD5File = fopen([localMD5Path UTF8String], "w+");
-                if(localMD5File) {
-                    NSDictionary* data_dic = @{@"ETag" :self.ETag, @"LastModify": self.LastModify};
-                    NSData *data = [NSJSONSerialization dataWithJSONObject:data_dic options:0 error:0];
-                    fwrite(data.bytes, data.length, 1, localMD5File);
-                    fclose(localMD5File);
-                }
-            }
-        }
-    }
-}
-
 -(instancetype)initWithNativeTask:(std::shared_ptr<TBJGameHttpTask>)task {
     if(self = [super init]) {
         _task = task;
@@ -213,29 +237,6 @@
         [self.Connection cancel];
         self.Connection = nil;
     }
-    //    if (self.responseData) {
-    //        [self.responseData release]
-    //    }
-    //    if (self.url) {
-    //        [self.url release]
-    //    }
-    //    if (self.LocalPath) {
-    //        [self.LocalPath release]
-    //    }
-    //    if (self.ETag) {
-    //        [self.ETag release]
-    //    }
-    //    if (self.LastModify) {
-    //        [self.LastModify release]
-    //    }
-    //    if (self.responseCode) {
-    //        [self.responseCode release]
-    //    }
-    //    if (self.statusString) {
-    //        [self.statusString release]
-    //    }
-    [self closeLocalFile];
-//    [super dealloc];
 }
 
 #pragma mark NSURLConnection Delegate Methods
@@ -244,7 +245,7 @@
         NSLog(@"received authentication challenge");
         NSString* username = [NSString stringWithFormat:@"%s", _task->httpRequstInternalp->request.username.c_str()];
         NSString* password = [NSString stringWithFormat:@"%s", _task->httpRequstInternalp->request.password.c_str()];
-
+        
         NSURLCredential *newCredential = [NSURLCredential credentialWithUser:username
                                                                     password:password
                                                                  persistence:NSURLCredentialPersistenceForSession];
@@ -254,7 +255,8 @@
     }
     else {
         NSLog(@"previous authentication failure");
-    }
+        _task->status = TBJGameHttpTask::Status::Failed;
+        [self handleResult];    }
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveResponse:(NSURLResponse *)response {
@@ -264,17 +266,16 @@
     // also serves to clear it
     
     NSHTTPURLResponse* resp = (NSHTTPURLResponse*)response;
-    //save etag
     if(resp) {
         _responseCode = resp.statusCode;
         _statusString = [NSHTTPURLResponse localizedStringForStatusCode:_responseCode];
         
         NSDictionary* headers = [(NSHTTPURLResponse *)response allHeaderFields];
-
+        
         for (id key in headers) {
             //注意对于字典for遍历循环的是key
             TBJHttpResponseInternal* tbjHttpResponsePtr = &(_task -> httpRequstInternalp -> responseInternal);
-
+            
             NSString* kNsString = [NSString stringWithFormat:@"%@", key];
             std::string k = [kNsString UTF8String];
             NSString* vNsString = [NSString stringWithFormat:@"%@", [headers objectForKey:key]];
@@ -283,43 +284,39 @@
         }
         
         NSDictionary* dict = [resp allHeaderFields];
-        self.ETag = dict[@"ETag"];
-        self.LastModify = dict[@"Last-Modified"];
-        _needRefreshETag = NO;
         if(resp.statusCode == 200) {
             if (_task->httpReq) {
                 TBJResponseCallback responseCallback = _task->httpResponseCallback;
                 TBJHttpResponseInternal* response = &(_task->httpRequstInternalp->responseInternal);
-    #ifdef JENOVA_SIMULATOR
+#ifdef JENOVA_SIMULATOR
                 TBJGameInstance* gameInstance = (TBJGameInstance* )_task->httpRequstInternalp-> gameInstance;
                 
                 gameInstance -> mHttpCallbackManager.readyToInvoke(response, responseCallback,  TBJHttpStage::OnReceivedResponse);
-    #else
+#else
                 WasmGameInstance* gameInstance = (WasmGameInstance* )_task->httpRequstInternalp-> gameInstance;
                 
                 gameInstance -> mHttpCallbackManager.readyToInvoke(response, responseCallback, TBJHttpStage::OnReceivedResponse);
-    #endif
+#endif
+            } else {
+                self.contentLength = [response expectedContentLength];
+                if (self.contentLength == -1) {
+                    // default value
+                    self.contentLength = 30 * 1024 * 1024;
+                }
             }
             
-            _needRefreshETag = YES;
-            NSLog(@"start http connection %@", self.url);
-        } else if(resp.statusCode == 304) {
-            //remote is same
-            _task->localPath = [self.LocalPath UTF8String];
-            _task->status = TBJGameHttpTask::Status::Finished;
-            [connection cancel];
-            NSLog(@"file %@ not modified on remote", self.url);
-            return;
+            NSLog(@"start http connection %@, %d", self.url, _task->taskID);
         } else if(resp.statusCode == 404) {
-            _task->localPath = [self.LocalPath UTF8String];
             _task->status = TBJGameHttpTask::Status::Failed;
             [connection cancel];
             NSLog(@"file %@ not found on remote", self.url);
+            [self handleResult];
             return;
         } else {
             _task->status = TBJGameHttpTask::Status::Failed;
             [connection cancel];
             NSLog(@"url %@ reponse code not illegal", self.url);
+            [self handleResult];
             return;
         }
     }
@@ -331,62 +328,29 @@
     if(dataSize == 0) {
         _task->status = TBJGameHttpTask::Status::Failed;
         [self.Connection cancel];
+        [self handleResult];
         return;
-    }
-    
-    if (!_task -> httpReq) {
-        NSFileManager *fileManager = [NSFileManager defaultManager];
-        if([fileManager fileExistsAtPath:self.LocalPath]) {
-            NSError* error;
-            [fileManager removeItemAtPath:self.LocalPath error:&error];
-            if(error) {
-                NSLog(@"tbj game http connection error : %@", error);
-                _task->status = TBJGameHttpTask::Status::Failed;
-                [self.Connection cancel];
-                return;
-            }
-        }
-        
-        [fileManager createFileAtPath:self.LocalPath contents:nil attributes:nil];
-        
-        _localFile = [NSFileHandle fileHandleForWritingAtPath:self.LocalPath];
-        if(!_localFile) {
-            NSLog(@"open local path %@ failed", self.LocalPath);
-            _task->status = TBJGameHttpTask::Status::Failed;
-            [self.Connection cancel];
-            return;
-        }
     }
 }
 
 - (void)connection:(NSURLConnection *)connection didReceiveData:(NSData *)data {
-    // Append the new data to the instance variable you declared
-    if(_localFile) {
-        @try {
-            [_localFile writeData:data];
-        } @catch (NSException *exception) {
-            _localFile = nil;
-            _task->status = TBJGameHttpTask::Status::Failed;
-            [self.Connection cancel];
-        }
-    }
-    
-    
     if (_task->httpReq) {
         TBJHttpResponseInternal* responsePtr = &(_task -> httpRequstInternalp -> responseInternal);
-
+        
         responsePtr->mResponceData.extend((unsigned char*)data.bytes, ((unsigned char*)(data.bytes)) + data.length);
         
         TBJResponseCallback responseCallback = _task->httpResponseCallback;
-    #ifdef JENOVA_SIMULATOR
+#ifdef JENOVA_SIMULATOR
         TBJGameInstance* gameInstance = (TBJGameInstance* )_task->httpRequstInternalp-> gameInstance;
         
         gameInstance -> mHttpCallbackManager.readyToInvoke(responsePtr, responseCallback, TBJHttpStage::OnReceivedData);
-    #else
+#else
         WasmGameInstance* gameInstance = (WasmGameInstance* )_task->httpRequstInternalp-> gameInstance;
         
         gameInstance -> mHttpCallbackManager.readyToInvoke(responsePtr, responseCallback, TBJHttpStage::OnReceivedData);
-    #endif
+#endif
+    } else {
+        [self getNativeTask] -> downloadTask->updateProgress(self.responseData.length + [data length], [self contentLength]);
     }
     
     // read to memory
@@ -400,62 +364,28 @@
 }
 
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection {
-    // The request is complete and data has been received
-    // You can parse the stuff in your instance variable now
-    //wite file to local
-    
-    [self closeLocalFile];
-    if (self.LocalPath) {
-        _task->localPath = [self.LocalPath UTF8String];
-    }
-    
     _task->status = TBJGameHttpTask::Status::Finished;
-    
+    [self handleResult];
     NSLog(@"http delegator task finished");
 }
 
--(void)closeLocalFile {
-    if(_localFile) {
-        [_localFile closeFile];
-        _localFile = nil;
-    }
-}
-
 - (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error {
-    // The request has failed for some reason!
-    // Check the error var
-    
-    [self closeLocalFile];
-    
-    NSFileManager* fm =[NSFileManager defaultManager];
-    if(![fm fileExistsAtPath:self.LocalPath]) {
-        [fm removeItemAtPath:self.LocalPath error:nil];
-    }
     
     NSString* e = [NSString stringWithFormat:@"%@", error];
     _task->message = [e UTF8String];
-    _task->localPath = [self.LocalPath UTF8String];
     _task->status = TBJGameHttpTask::Status::Failed;
+    [self handleResult];
 }
 
 @end
 
 
 @interface TBJGameHttpDelegator() {
-    int _taskIDS;
-    
-    bool _exit;
-    bool _exited;
-    bool _willExit;
-    
-    std::mutex _penddinglock;
 }
 
-@property(nonatomic, strong) NSString* mSubDir;
-@property(nonatomic, strong) NSString* mRemoteURL;
-@property(atomic, strong) NSMutableArray* mPendingTasks;
+@property(nonatomic) bool willExit;
+@property(atomic) int taskIdCount;
 @property(nonatomic, strong) NSOperationQueue* mTaskQueue;
-
 @end
 
 @implementation TBJGameHttpDelegator;
@@ -474,11 +404,7 @@ class WasmGameInstance;
 
 -(instancetype) init {
     if(self = [super init]) {
-        self.mPendingTasks = [[NSMutableArray alloc] init];
-        //        self.mPreloadTasks = [[NSMutableDictionary alloc] init];
-        _exited = false;
-        _exit = false;
-        _willExit = false;
+        self.willExit = false;
         
         unsigned int ncpu;
         size_t len = sizeof(ncpu);
@@ -488,103 +414,7 @@ class WasmGameInstance;
         }
         
         self.mTaskQueue = [[NSOperationQueue alloc] init];
-        
-        //        __weak __typeof(self)weakSelf = self;
-        for(int i = 0; i < ncpu - 1; ++i){
-            [self.mTaskQueue addOperationWithBlock:^{
-                
-                [[NSThread currentThread] setName:@"tbjgame http thread"];
-                
-                NSRunLoop* curRunLoop = [NSRunLoop currentRunLoop];
-                
-                //processing task
-                TBJGameNSURLDelegateTask* task = nil;
-                while (!_exit) {
-                    if(task == nil) {
-                        //get a task
-                        {
-                            std::unique_lock<std::mutex> lock(_penddinglock);
-                            if(self.mPendingTasks.count > 0) {
-                                task = self.mPendingTasks[self.mPendingTasks.count - 1];
-                                [self.mPendingTasks removeLastObject];
-                            }
-                        }
-                        
-                        if(task != nil) {
-                            if ([task getNativeTask]->httpReq) {
-                                [task startHttpTask];
-                            } else {
-                                [task startDownloadTask];
-                            }
-                            
-                        }
-                    }
-                    
-                    if(_willExit) {
-                        task = nil;
-                    }
-                    
-                    if(task && [task getNativeTask]->status != TBJGameHttpTask::Status::Running) {
-                        NSLog(@"task enter result handle");
-                        
-                        //update finished tasks
-                        //                        [task refreshETag];
-                        
-                        if ([task getNativeTask]->onDownloadFinished != nullptr) {
-                            uint8_t length = (size_t)([[task responseData] length]);
-                            void* data = malloc(length);
-                            memcpy(data, ([task responseData].mutableBytes), length);
-                            
-                            TBJGameHttpTask::OnDownloadFinished onDownloadFinished = [task getNativeTask]->onDownloadFinished;
-                            onDownloadFinished([task getNativeTask]->taskID, (int) [task responseCode] == 200,
-                                               [[task url] UTF8String]
-                                               , data, length);
-                        }
-                        
-                        if ([task getNativeTask] -> httpReq) {
-                            TBJHttpResponse* response = &([task getNativeTask]->httpRequstInternalp->responseInternal.response);
-                            
-                            int len = strlen([[task statusString] UTF8String]);
-                            char* tmpMsg = (char*) malloc(len + 1);
-                            memcpy((void *) tmpMsg, [[task statusString] UTF8String], len);
-                            tmpMsg[len] = 0;
-                            response->msg = tmpMsg;
-                            response->dataLen = (int)([[task responseData] length]);
-                            response->data = (const char*)malloc(response->dataLen);
-                            memcpy((void *)response->data, ([task responseData].mutableBytes), response->dataLen);
-                            response->success = ((int)[task responseCode] == 200);
-                            
-                            response->code = (int)[task responseCode];
-                        }
-                        
-                        if ([task getNativeTask] -> httpResponseCallback != nullptr) {
-                            TBJResponseCallback responseCallback = [task getNativeTask]->httpResponseCallback;
-                            TBJHttpResponseInternal* response = &([task getNativeTask]->httpRequstInternalp->responseInternal);
-#ifdef JENOVA_SIMULATOR
-                            TBJGameInstance* gameInstance = (TBJGameInstance* )[task getNativeTask]->httpRequstInternalp-> gameInstance;
-                            
-                            TBJHttpStage stage = response->response.success ? TBJHttpStage::OnRequestComplete : TBJHttpStage::OnRequestError;
-                            gameInstance -> mHttpCallbackManager.readyToInvoke(response, responseCallback, stage);
-#else
-                            WasmGameInstance* gameInstance = (WasmGameInstance* )[task getNativeTask]->httpRequstInternalp-> gameInstance;
-                            
-                            TBJHttpStage stage = response->response.success ? TBJHttpStage::OnRequestComplete : TBJHttpStage::OnRequestError;
-                            gameInstance -> mHttpCallbackManager.readyToInvoke(response, responseCallback, stage);
-#endif
-                        }
-                                            
-                        //fetch next
-                        task = nil;
-                    }
-                    
-                    [curRunLoop runUntilDate:[NSDate date]];
-                    
-                    [NSThread sleepForTimeInterval:0.001];
-                }
-                
-                NSLog(@"tbj game http thread exited");
-            }];
-        }
+        [self.mTaskQueue setMaxConcurrentOperationCount:ncpu - 1];
     }
     return self;
 }
@@ -600,46 +430,70 @@ class WasmGameInstance;
     if(_exit) {
         [task getNativeTask]->retryCount = 0;
     }
+        
+    TBJGameHttpOperation* operation = [[TBJGameHttpOperation alloc] init];
+    [operation setQueuePriority: [task priority]];
 
-    std::unique_lock<std::mutex> lock(_penddinglock);
-    [self.mPendingTasks addObject:task];
+    operation -> delegateTask = task;
+    [self.mTaskQueue addOperation:operation];
+    
 }
 
--(size_t)addDownloadTask:(NSString*)urlStr local:(NSString*) path retryCount:(int) retry {
+-(size_t)addDownloadTask:(NSString*)urlStr path:(NSString*)path taskId:(int) taskId index:(int)index retryCount:(int) retry downloadTask:(TBJGameFSNS::DownloadTask*) downloadTask priority:(TBJHttpReqPriority) priority {
     std::string mat_str = [urlStr UTF8String];
     if(mat_str.find("https://") == 0 || mat_str.find("http://") == 0) {
         NSURL* url = [NSURL URLWithString:urlStr];
     }
-
-    _taskIDS++;
     
     std::shared_ptr<TBJGameHttpTask> task(new TBJGameHttpTask());
-    task->taskID = _taskIDS;
+    task->taskID = taskId;
     task->retryCount = retry;
     task->status = TBJGameHttpTask::Status::Running;
     task->httpReq = false;
+    task->downloadTask = downloadTask;
+    task->index = index;
+    task->localPath = [path UTF8String];
     
     TBJGameNSURLDelegateTask* ocTask = [[TBJGameNSURLDelegateTask alloc] initWithNativeTask:task];
+    ocTask.priority = [self mapRequestPriority:priority];
     ocTask.url = urlStr;
-    ocTask.LocalPath = path;
-        
+    
     //submit task
     [self submit:ocTask];
     
     return (size_t)task.get();
 }
 
+-(bool)willStop {
+    return self.willExit;
+}
+
+-(NSOperationQueuePriority) mapRequestPriority:(TBJHttpReqPriority) priority {
+    NSOperationQueuePriority nsOperationQueuePriority = NSOperationQueuePriorityNormal;
+    if (priority == TBJHttpReqPriority::High) {
+        nsOperationQueuePriority = NSOperationQueuePriorityHigh;
+    } else if (priority == TBJHttpReqPriority::VeryHigh) {
+        nsOperationQueuePriority = NSOperationQueuePriorityVeryHigh;
+    } else if (priority == TBJHttpReqPriority::Normal) {
+        nsOperationQueuePriority = NSOperationQueuePriorityNormal;
+    } else if (priority == TBJHttpReqPriority::Low) {
+        nsOperationQueuePriority = NSOperationQueuePriorityLow;
+    } else if (priority == TBJHttpReqPriority::VeryLow) {
+        nsOperationQueuePriority = NSOperationQueuePriorityVeryLow;
+    }
+    return nsOperationQueuePriority;
+}
+
 -(size_t)addHttpTask:(TBJHttpRequestInternalp) req retryCount:(int) retry {
-    _taskIDS++;
-    
     std::shared_ptr<TBJGameHttpTask> task(new TBJGameHttpTask());
-    task->taskID = _taskIDS;
+    task->taskID = ++self.taskIdCount;
     task->retryCount = retry;
     task->status = TBJGameHttpTask::Status::Running;
     task->httpRequstInternalp = req;
     task->httpReq = true;
     
     TBJGameNSURLDelegateTask* ocTask = [[TBJGameNSURLDelegateTask alloc] initWithNativeTask:task];
+    ocTask.priority = [self mapRequestPriority:req->request.priority];
     
     //submit task
     [self submit:ocTask];
@@ -648,31 +502,21 @@ class WasmGameInstance;
 }
 
 -(void)shutDown {
-    //process all pendding tasks
     _willExit = true;
-    while(self.mPendingTasks.count > 0) {
-        //[self pool];
-        [NSThread sleepForTimeInterval: 0.033];
-    }
-    
-    //wait threads finished
-    _exit = true;
     [self.mTaskQueue cancelAllOperations];
     [self.mTaskQueue waitUntilAllOperationsAreFinished];
-
-    self.mPendingTasks = nil;
+    
     self.mTaskQueue = nil;
 }
 
 @end
 
-TBJGameHttpTask* TBJAddDownloadTask(const std::string &url, const std::string &localPath, int retry, TBJGameHttpTask::OnDownloadFinished onDownloadFinished) {
+TBJGameHttpTask* TBJAddDownloadTask(const std::string &url, const std::string &path, int taskId, int index, int retry, TBJGameFSNS::DownloadTask* downloadTask, TBJHttpReqPriority priority) {
     NSString* nsUrl = [[NSString alloc] initWithUTF8String:url.c_str()];
-    NSString* nsLocalPath = [[NSString alloc] initWithUTF8String:localPath.c_str()];
+    NSString* nsLocalPath = [[NSString alloc] initWithUTF8String:path.c_str()];
     
-    size_t taskPtr = [[TBJGameHttpDelegator shareInstance] addDownloadTask:nsUrl local:nsLocalPath retryCount:retry];
+    size_t taskPtr = [[TBJGameHttpDelegator shareInstance] addDownloadTask:nsUrl path:nsLocalPath taskId:taskId index:index retryCount:retry downloadTask:downloadTask priority:priority];
     TBJGameHttpTask* task = (TBJGameHttpTask*)taskPtr;
-    task->onDownloadFinished = onDownloadFinished;
     return task;
 }
 
@@ -682,4 +526,8 @@ TBJGameHttpTask* TBJAddHttpTask(TBJHttpRequestInternalp req, int retry) {
     task->httpRequstInternalp = req;
     task->httpResponseCallback = req->request.callBack;
     return task;
+}
+
+void TBJNativeHttpDelegatorShutdown() {
+    [[TBJGameHttpDelegator shareInstance] shutDown];
 }

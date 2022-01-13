@@ -18,6 +18,14 @@ TAOBAO_NS_BEGIN
 
 TBJHttpRequestp TBJNewHttpRequestWithGameInstance(const char* url, TBJMethod method, void* gameInstance);
 
+enum TBJHttpReqPriority {
+    VeryLow,
+    Low,
+    Normal,
+    High,
+    VeryHigh
+};
+
 struct TBJHttpRequest {
     TBJMethod method;
     std::string url;
@@ -28,6 +36,7 @@ struct TBJHttpRequest {
     std::string password;
     std::map<std::string, std::string> headerMap;
     TBJResponseCallback callBack;
+    TBJHttpReqPriority priority;
     size_t wasmFunctionIndex;
 } ;
 
@@ -44,11 +53,15 @@ struct TBJHttpRequestInternal {
     TBJHttpRequest request;
     TBJHttpResponseInternal responseInternal;
     void* gameInstance;
+    
 };
 
 typedef struct TBJHttpRequestInternal* TBJHttpRequestInternalp;
 
 void setTBJHttpCallback(TBJHttpRequestp httpRequest, TBJResponseCallback callBack);
+
+void TBJHttpSetPriority(TBJHttpRequestp httpRequest, TBJHttpReqPriority priority);
+
 //void TBJInovokeHttpCallbacks(void* gameInstance);
 
 TAOBAO_NS_END

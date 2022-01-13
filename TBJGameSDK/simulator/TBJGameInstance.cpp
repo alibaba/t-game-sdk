@@ -108,6 +108,7 @@ void TBJGameInstance::gameLoopOnce(float time)
         }
     }
     mExecutingEvent.clear();
+    mHttpCallbackManager.inovokeHttpCallbacks(this);
     
     if (mGameLoop != nullptr)
     {

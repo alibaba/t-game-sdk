@@ -48,6 +48,7 @@ void TBJFreeHttpRequest(TBJHttpRequestp p);
 
 void TBJAddHeader(TBJHttpRequestp httpRequest, const char *key, const char *value);
 void TBJAddContent(TBJHttpRequestp httpRequest, const char* body, int size);
+void TBJSetHttpCallback(TBJHttpRequestp httpRequest, TBJResponseCallback callBack);
 void TBJSendRequest(TBJHttpRequestp p, TBJResponseCallback callBack);
 TBJHttpResponsep TBJSyncSendRequest(TBJHttpRequestp p);
 

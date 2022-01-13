@@ -85,7 +85,7 @@ if __name__ == '__main__':
 		jpeg_local = os.path.abspath(os.path.join(install_dir, "libjpg.zip"))
 		if os.path.exists(jpeg_local):
 			os.remove(jpeg_local)
-		download("http://jenova-public.cn-hangzhou.oss-cdn.aliyun-inc.com/thirdparty/libjpg.zip", jpeg_local)
+		download("http://jenova-public.oss-cn-zhangjiakou.aliyuncs.com/thirdparty/libjpg.zip", jpeg_local)
 		os.system("unzip libjpg.zip")
 
 		lib_dir = os.path.join(script_root, "libjpg")

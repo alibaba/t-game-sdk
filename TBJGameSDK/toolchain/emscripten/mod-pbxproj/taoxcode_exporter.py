@@ -8,6 +8,7 @@ import argparse
 import shutil
 import subprocess
 import hashlib
+import re
 
 from pbxproj import XcodeProject
 
@@ -18,6 +19,7 @@ TARGET_SHARED_LIBRARY = 2
 __jenova_prefined_libraries = ["OpenGL", "OpenGLES", "freetype", "box2d", "libbox2d", "chipmunk", "libchipmunk",
                                "libpng",
                                "libjpeg", "libfreetype"]
+__jenova_flag_linkness_libraries = ["-lz", "-lpng", "-ljpeg", "-lOpenGL", "-lOpenGLES"]
 
 # ingore CMake generate target name and WasmSimulator
 __project_wasm_builtin_projects = ['ZERO_CHECK', 'ALL_BUILD', 'TBJGameFramework']
@@ -85,9 +87,12 @@ def get_xcode_target_type(target):
         return TARGET_SHARED_LIBRARY
 
 
-def remove_objc_flag(flags_expand):
-    for i in range(len(flags_expand) - 1, -1, -1):
-        if flags_expand[i].lower() == "-objc":
+def remove_flag_linkness_libraries(flags_expand):
+    if len(flags_expand) == 0:
+        return flags_expand
+    oringle_len = len(flags_expand) - 1
+    for i in range(oringle_len, -1, -1):
+        if flags_expand[i] in __jenova_flag_linkness_libraries:
             del flags_expand[i]
     return flags_expand
 
@@ -162,6 +167,26 @@ class XCodeSettingResolver(object):
         return self._project_setting
 
     @classmethod
+    def convert_special_load_macro(cls, link_flags):
+        if len(link_flags) == 0:
+            return link_flags
+        oringle_range = len(link_flags) - 1
+        for i in range(oringle_range, -1, -1):
+            if link_flags[i].lower() == "-objc":
+                print("current webassembly tool does not support load all object-c class(-ObjC). Discard it!")
+                del link_flags[i]
+            elif link_flags[i].lower() == "-all_load" or link_flags[i].lower() == "--all_load":
+                print("current webassembly tool does not support -all_load. Discard it!")
+                del link_flags[i]
+            elif link_flags[i] == "-force_load" or link_flags[i] == "--force_load":
+                link_flags[i] = "--whole-archive"
+                if i < len(link_flags[i]) - 1:
+                    link_flags.insert(i + 2, "--no-whole-archive")
+                else:
+                    link_flags.append("--no-whole-archive")
+        return link_flags
+
+    @classmethod
     def _strip_macro_str(cls, macro):
         macro = macro.strip()
         while (macro.startswith('"') and macro.endswith('"')) or (
@@ -174,20 +199,22 @@ class XCodeSettingResolver(object):
 
     @classmethod
     def _strip_macro_list(cls, macros):
-        if macros is None:
+        if macros is None or len(macros) == 0:
             return []
         for i in range(0, len(macros)):
             macros[i] = XCodeSettingResolver._strip_macro_str(macros[i])
         return macros
 
     @classmethod
-    def _strip_mac_and_change_to_list(cls, macro_str_or_list):
+    def _strip_mac_and_change_to_list(cls, macro_str_or_list, split_regex):
         macro_list = []
         if isinstance(macro_str_or_list, str):
             macro_str_or_list = macro_str_or_list.strip()
-            macro_list = macro_str_or_list.split(" ")
+            macro_list = re.split(split_regex, macro_str_or_list)
         elif isinstance(macro_str_or_list, list):
-            macro_list = macro_str_or_list
+            for list_item in macro_str_or_list:
+                macro_item_list = XCodeSettingResolver._strip_mac_and_change_to_list(list_item, split_regex)
+                macro_list += macro_item_list
 
         macro_list = XCodeSettingResolver._strip_macro_list(macro_list)
         return macro_list
@@ -221,6 +248,11 @@ class XCodeSettingResolver(object):
             return macro[0:next_macro_start] + self._root_obj.get_xcode_project_dir() + macro[next_macro_end + 1:], True
         elif macro_label.lower() == "pods_root":
             return macro[0:next_macro_start] + self._root_obj.get_pods_root() + macro[next_macro_end + 1:], True
+        elif macro_label.lower() == "built_products_dir" or macro_label.lower() == "configuration_build_dir":
+            append_dir_splitter = ""
+            if not macro[next_macro_end + 1] == '/':
+                append_dir_splitter = '/'
+            return macro[0:next_macro_start] + "${CMAKE_BINARY_DIR}" + append_dir_splitter + macro[next_macro_end + 1:], True
         elif macro_label in self._target_setting:
             return macro[0:next_macro_start] + self._target_setting[macro_label] + macro[next_macro_end + 1:], True
 
@@ -236,12 +268,12 @@ class XCodeSettingResolver(object):
             macro, success = self._resolve_next_macro(macro)
         return macro
 
-    def _resolve_in_project(self, label):
+    def _resolve_in_project(self, label, split_regex=' '):
         if self._project_setting is None or self._project_setting[label] is None:
             return []
 
         resolved_list = []
-        macro_list = XCodeSettingResolver._strip_mac_and_change_to_list(self._project_setting[label])
+        macro_list = XCodeSettingResolver._strip_mac_and_change_to_list(self._project_setting[label], split_regex)
 
         for i in range(0, len(macro_list)):
             macro = macro_list[i]
@@ -256,18 +288,18 @@ class XCodeSettingResolver(object):
                     resolved_list.append(macro)
         return resolved_list
 
-    def resolve_macro(self, label):
+    def resolve_macro(self, label, split_regex=' '):
         if self._target_setting[label] is None:
             return []
 
         resolved_list = []
 
-        macro_list = XCodeSettingResolver._strip_mac_and_change_to_list(self._target_setting[label])
+        macro_list = XCodeSettingResolver._strip_mac_and_change_to_list(self._target_setting[label], split_regex)
         for i in range(0, len(macro_list)):
             macro = macro_list[i]
 
             if macro.lower() == "$(inherited)" or macro.lower() == "${inherited}":
-                resolved_list_project = self._resolve_in_project(label)
+                resolved_list_project = self._resolve_in_project(label, split_regex)
                 resolved_list = [*resolved_list, *resolved_list_project]
             else:
                 macro = self._resolve_macro_internal(macro)
@@ -760,8 +792,9 @@ class TBJXCodeExporter(object):
             other_cxx_flag = " ".join(other_cxx_flag_expand)
             f.write('set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} %s")\n' % other_cxx_flag)
 
-        other_ld_flag_expand = self._setting_resolver.resolve_macro("OTHER_LDFLAGS")
-        other_ld_flag_expand = remove_objc_flag(other_ld_flag_expand)
+        other_ld_flag_expand = self._setting_resolver.resolve_macro("OTHER_LDFLAGS", ' |,')
+        other_ld_flag_expand = XCodeSettingResolver.convert_special_load_macro(other_ld_flag_expand)
+        other_ld_flag_expand = remove_flag_linkness_libraries(other_ld_flag_expand)
         if len(other_ld_flag_expand) > 0:
             other_ld_flag = " ".join(other_ld_flag_expand)
             f.write('set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} %s")\n' % other_ld_flag)
@@ -956,8 +989,8 @@ class TBJXCodeExporter(object):
                 if dep.get_auxiliary_export_target_name() is not None:
                     f.write(' %s' % stripped_name(dep.get_auxiliary_export_target_name()))
 
-            if actual_has_dep:
-                f.write(")\n")
+        if actual_has_dep:
+            f.write(")\n")
 
         for target_name, deps in self.__cmake_dependency.items():
             if actual_has_dep:

@@ -258,6 +258,11 @@ void TBJGameGenerateUUID(char result[37])
     result[length] = 0;
 }
 
+int TBJGameGetNetworkStatus(unsigned long long surfaceId)
+{
+    return TAOBAO_NETWORK_WIFI;
+}
+
 unsigned int TBJGamePlayAudio(const char* filePath, int loop, float pitch, float pan, float gain)
 {
     return 0;

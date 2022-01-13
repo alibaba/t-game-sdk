@@ -60,6 +60,17 @@ extern "C" {
 typedef union _G_fpos64_t {
 	char __opaque[16];
 	double __align;
+
+#ifdef __cplusplus
+    _G_fpos64_t(){}
+    _G_fpos64_t(unsigned long long v) { *(unsigned long long*)(&__opaque) = v; }
+    __attribute__((always_inline))
+    inline _G_fpos64_t& operator=(unsigned long long v)
+    {
+        *(unsigned long long*)(&__opaque) = v;
+        return *this;
+    }
+#endif
 } fpos_t;
 
 extern FILE *const stdin;

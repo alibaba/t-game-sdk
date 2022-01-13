@@ -30,7 +30,7 @@ private:
 public:
     void readyToInvoke(TBJHttpResponseInternal* response, TBJResponseCallback callback, TBJHttpStage stage);
 
-    void inovokeHttpCallbacks(void* gameInstance);
+    void inovokeHttpCallbacks();
 };
 
 #endif /* TBJHttpCallbackManager_h */

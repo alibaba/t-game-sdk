@@ -9,11 +9,10 @@
 #include "string"
 #include "TBJGameHttp_Internal.h"
 #include "vector"
+#include "TBJGameFS/TBJGameDLReq.h"
 
 class TBJGameHttpTask {
-public:
-    typedef std::function<void(int taskId, int error, const std::string& url, void* data, uint8_t length)> OnDownloadFinished;
-    
+public:    
     enum Status{
         Running,
         Finished,
@@ -24,15 +23,18 @@ public:
     int retryCount;
     std::string localPath;
     std::string message;
-    OnDownloadFinished onDownloadFinished;
+    int index;
     
+    TBJGameFSNS::DownloadTask * downloadTask;
     bool httpReq;
     TBJHttpRequestInternalp httpRequstInternalp;
     TBJResponseCallback httpResponseCallback;
 };
 
 #if defined(__APPLE__) || defined(TBJGAME_DESKTOP)
-TBJGameHttpTask* TBJAddDownloadTask(const std::string &url, const std::string &localPath, int retry, TBJGameHttpTask::OnDownloadFinished onDownloadFinished);
+TBJGameHttpTask* TBJAddDownloadTask(const std::string &url, const std::string &path, int taskId, int index, int retry, TBJGameFSNS::DownloadTask* downloadTask, TBJHttpReqPriority priority);
 
 TBJGameHttpTask* TBJAddHttpTask(TBJHttpRequestInternalp req, int retry);
+
+void TBJNativeHttpDelegatorShutdown();
 #endif

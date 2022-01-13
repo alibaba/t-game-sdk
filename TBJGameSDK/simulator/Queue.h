@@ -2,14 +2,13 @@
 
 #include <queue>
 #include <vector>
+#include <mutex>
 
 #ifdef JENOVA_SIMULATOR
 #include "SpinLock.h"
 #else
 #include "Thread/SpinLock.h"
 #endif
-
-#include <__mutex_base>
 
 namespace WasmGame {
     template<typename T>
@@ -91,7 +90,22 @@ namespace WasmGame {
             mVec.length = 0;
             mLock.unlock();
         }
-        
+
+        inline void resize(int size)
+        {
+            mLock.lock();
+            mVec.resize(size);
+            mLock.unlock();
+        }
+
+        inline T* lock_ptr() {
+            mLock.lock();
+            return mVec.data();
+        }
+
+        inline void unlock() {
+            mLock.unlock();
+        }
     private:
         std::vector<T> mVec;
         SpinLock mLock;

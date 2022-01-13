@@ -17,54 +17,6 @@
 
 @end
 
-
-@implementation WasmGameGestureRecognizer
-
-- (instancetype)initWithTarget:(nullable id)target action:(nullable SEL)action
-{
-    self = [super initWithTarget:target action:action];
-    return self;
-}
-
-- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
-{
-    [super touchesBegan:touches withEvent:event];
-    
-    if (self.gameView != nil)
-    {
-        [self.gameView touchesBegan:touches withEvent:event];
-    }
-}
-
-- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
-{
-    [super touchesMoved:touches withEvent:event];
-    
-    if (self.gameView != nil)
-    {
-        [self.gameView touchesMoved:touches withEvent:event];
-    }
-}
-
-- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
-{
-    [super touchesEnded:touches withEvent:event];
-    if (self.gameView != nil)
-    {
-        [self.gameView touchesEnded:touches withEvent:event];
-    }
-}
-
-- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
-{
-    [super touchesCancelled:touches withEvent:event];
-    if (self.gameView != nil)
-    {
-        [self.gameView touchesCancelled:touches withEvent:event];
-    }
-}
-@end
-
 @interface TBJGameView() {
     TBJGameInstance* _gameInstance;
     CFTimeInterval lastFrameTime;
@@ -87,6 +39,59 @@
 @property(nonatomic, strong) EAGLContext* glContext;
 @property(nonatomic, strong) WasmGameGestureRecognizer* gestureRecognizer;
 
+- (void)touchesBeganCustom:(NSSet<UITouch *> *)touches withEvent:(nullable UIEvent *)event;
+- (void)touchesMovedCustom:(NSSet<UITouch *> *)touches withEvent:(nullable UIEvent *)event;
+- (void)touchesEndedCustom:(NSSet<UITouch *> *)touches withEvent:(nullable UIEvent *)event;
+- (void)touchesCancelledCustom:(NSSet<UITouch *> *)touches withEvent:(nullable UIEvent *)event;
+
+@end
+
+
+@implementation WasmGameGestureRecognizer
+
+- (instancetype)initWithTarget:(nullable id)target action:(nullable SEL)action
+{
+    self = [super initWithTarget:target action:action];
+    return self;
+}
+
+- (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+    [super touchesBegan:touches withEvent:event];
+    
+    if (self.gameView != nil)
+    {
+        [self.gameView touchesBeganCustom:touches withEvent:event];
+    }
+}
+
+- (void)touchesMoved:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+    [super touchesMoved:touches withEvent:event];
+    
+    if (self.gameView != nil)
+    {
+        [self.gameView touchesMovedCustom:touches withEvent:event];
+    }
+}
+
+- (void)touchesEnded:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+    [super touchesEnded:touches withEvent:event];
+    if (self.gameView != nil)
+    {
+        [self.gameView touchesEndedCustom:touches withEvent:event];
+    }
+}
+
+- (void)touchesCancelled:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event
+{
+    [super touchesCancelled:touches withEvent:event];
+    if (self.gameView != nil)
+    {
+        [self.gameView touchesCancelledCustom:touches withEvent:event];
+    }
+}
 @end
 
 @implementation TBJGameView
@@ -462,112 +467,75 @@
     return YES;
 }
 
-- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event
+- (void)processTouch:(UITouch*) touch withEvent:(TBJGameEvent&)gameEvent
+{
+    intptr_t touchId = (intptr_t)(__bridge void*)touch;
+    gameEvent.touch.x = [touch locationInView: [touch view]].x * self.contentScaleFactor;
+    gameEvent.touch.y = [touch locationInView: [touch view]].y * self.contentScaleFactor;
+    gameEvent.touch.previousX = [touch previousLocationInView:[touch view]].x * self.contentScaleFactor;
+    gameEvent.touch.previousY = [touch previousLocationInView:[touch view]].y * self.contentScaleFactor;
+    gameEvent.touch.tapCount = [touch tapCount];
+    
+    gameEvent.eventType = TAOBAO_TOUCH_EVENT;
+    if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_0)
+    {
+        gameEvent.touch.pressure = [touch force];
+    } else
+    {
+        gameEvent.touch.pressure = 1.0f;
+    }
+    
+    long long touchIdL = (long long)touchId;
+    gameEvent.touch.touchId = (int)touchIdL;
+    
+    _gameInstance->invokeGameEvent(gameEvent);
+}
+
+- (void)touchesBeganCustom:(NSSet *)touches withEvent:(UIEvent *)event
 {
     if (_gameInstance == nil) return;
     
     TBJGameEvent gameEvent;
     for (UITouch* touch in touches)
     {
-        intptr_t touchId = (intptr_t)(__bridge void*)touch;
-        gameEvent.touch.x = [touch locationInView: [touch view]].x * self.contentScaleFactor;
-        gameEvent.touch.y = [touch locationInView: [touch view]].y * self.contentScaleFactor;
-        
-        gameEvent.eventType = TAOBAO_TOUCH_EVENT;
-        if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_0)
-        {
-            gameEvent.touch.pressure = [touch force];
-        } else
-        {
-            gameEvent.touch.pressure = 1.0f;
-        }
         gameEvent.touch.touchType = TAOBAO_TOUCH_DOWN;
-        
-        long long touchIdL = (long long)touchId;
-        gameEvent.touch.touchId = (int)touchIdL;
-        
-        _gameInstance->invokeGameEvent(gameEvent);
+        [self processTouch:touch withEvent:gameEvent];
     }
 }
 
-- (void)touchesMoved:(NSSet *)touches withEvent:(UIEvent *)event
+- (void)touchesMovedCustom:(NSSet *)touches withEvent:(UIEvent *)event
 {
     if (_gameInstance == nil) return;
     
     TBJGameEvent gameEvent;
     for (UITouch* touch in touches)
     {
-        intptr_t touchId = (intptr_t)(__bridge void*)touch;
-        gameEvent.touch.x = [touch locationInView: [touch view]].x * self.contentScaleFactor;
-        gameEvent.touch.y = [touch locationInView: [touch view]].y * self.contentScaleFactor;
-        
-        gameEvent.eventType = TAOBAO_TOUCH_EVENT;
-        if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_0)
-        {
-            gameEvent.touch.pressure = [touch force];
-        } else
-        {
-            gameEvent.touch.pressure = 1.0f;
-        }
         gameEvent.touch.touchType = TAOBAO_TOUCH_MOVE;
-        long long touchIdL = (long long)touchId;
-        gameEvent.touch.touchId = (int)touchIdL;
-        
-        _gameInstance->invokeGameEvent(gameEvent);
+        [self processTouch:touch withEvent:gameEvent];
     }
 }
 
-- (void)touchesEnded:(NSSet *)touches withEvent:(UIEvent *)event
+- (void)touchesEndedCustom:(NSSet *)touches withEvent:(UIEvent *)event
 {
     if (_gameInstance == nil) return;
     
     TBJGameEvent gameEvent;
     for (UITouch* touch in touches)
     {
-        intptr_t touchId = (intptr_t)(__bridge void*)touch;
-        gameEvent.touch.x = [touch locationInView: [touch view]].x * self.contentScaleFactor;
-        gameEvent.touch.y = [touch locationInView: [touch view]].y * self.contentScaleFactor;
-        
-        gameEvent.eventType = TAOBAO_TOUCH_EVENT;
-        if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_0)
-        {
-            gameEvent.touch.pressure = [touch force];
-        } else
-        {
-            gameEvent.touch.pressure = 1.0f;
-        }
         gameEvent.touch.touchType = TAOBAO_TOUCH_UP;
-        long long touchIdL = (long long)touchId;
-        gameEvent.touch.touchId = (int)touchIdL;
-        
-        _gameInstance->invokeGameEvent(gameEvent);
+        [self processTouch:touch withEvent:gameEvent];
     }
 }
     
-- (void)touchesCancelled:(NSSet *)touches withEvent:(UIEvent *)event
+- (void)touchesCancelledCustom:(NSSet *)touches withEvent:(UIEvent *)event
 {
     if (_gameInstance == nil) return;
     
     TBJGameEvent gameEvent;
     for (UITouch* touch in touches)
     {
-        intptr_t touchId = (intptr_t)(__bridge void*)touch;
-        gameEvent.touch.x = [touch locationInView: [touch view]].x * self.contentScaleFactor;
-        gameEvent.touch.y = [touch locationInView: [touch view]].y * self.contentScaleFactor;
-        
-        gameEvent.eventType = TAOBAO_TOUCH_EVENT;
-        if (NSFoundationVersionNumber >= NSFoundationVersionNumber_iOS_9_0)
-        {
-            gameEvent.touch.pressure = [touch force];
-        } else
-        {
-            gameEvent.touch.pressure = 1.0f;
-        }
         gameEvent.touch.touchType = TAOBAO_TOUCH_UP;
-        long long touchIdL = (long long)touchId;
-        gameEvent.touch.touchId = (int)touchIdL;
-        
-        _gameInstance->invokeGameEvent(gameEvent);
+        [self processTouch:touch withEvent:gameEvent];
     }
 }
 

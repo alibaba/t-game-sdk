@@ -8,6 +8,12 @@
 #include <unistd.h>
 #include <chrono>
 
+#ifdef JENOVA_SIMULATOR
+
+#include "TBJAppFrameworkInternal.h"
+
+#else
+
 #if defined(ANDROID) || defined(__ANDROID__)
 #include "HttpDelegator.h"
 
@@ -15,6 +21,8 @@ extern "C"
 {
     extern JavaVM * _jvm;
 }
+#endif
+
 #endif
 
 const char *stringFromTBJMethod(enum TBJMethod method) {
@@ -33,6 +41,7 @@ TBJHttpRequestp TBJNewHttpRequestWithGameInstance(const char* url, TBJMethod met
     requestInternalp->request.method = method;
     requestInternalp->request.body = nullptr;
     requestInternalp->request.callBack = nullptr;
+    requestInternalp->request.priority = TBJHttpReqPriority::High;
     requestInternalp->gameInstance = gameInstance;
     requestInternalp->responseInternal.response.tmpUserBuffer = nullptr;
     requestInternalp->responseInternal.response.tmpUserBufferSize = 0;
@@ -61,8 +70,17 @@ void TBJSetHttpAuth(TBJHttpRequestp httpRequest, const char *username, const cha
     }
 }
 
+void TBJHttpSetPriority(TBJHttpRequestp httpRequest, TBJHttpReqPriority priority) {
+    TBJHttpRequestInternalp reqInternal = (TBJHttpRequestInternalp)httpRequest;
+    reqInternal->request.priority = priority;
+}
+
 TBJHttpRequestp TBJNewHttpRequest(const char* url, TBJMethod method) {
+#ifdef JENOVA_SIMULATOR
+    return TBJNewHttpRequestWithGameInstance(url, method, tbjGlobalInstance);
+#else
     return TBJNewHttpRequestWithGameInstance(url, method, (void*)1L);
+#endif
 }
 
 void TBJFreeHttpRequest(TBJHttpRequestp p) {
@@ -100,10 +118,28 @@ void TBJHttpSetTimeout(TBJHttpRequestp httpRequest, int timeout) {
     httpRequest -> timeout = timeout;
 }
 
+#ifdef JENOVA_SIMULATOR
+void TBJSetHttpCallback(TBJHttpRequestp httpRequest, TBJResponseCallback callBack)
+{
+    setTBJHttpCallback(httpRequest, callBack);
+}
+#endif
+
+void TBJSetHttpCallback(TBJHttpRequestp httpRequest, TBJResponseCallback callBack)
+{
+    httpRequest->callBack = callBack;
+}
+
 void TBJSendRequest(TBJHttpRequestp p, TBJResponseCallback callBack) {
-    setTBJHttpCallback(p, callBack);
+    if (callBack != nullptr)
+    {
+        setTBJHttpCallback(p, callBack);
+    }
 #if defined(__APPLE__) || defined(TBJGAME_DESKTOP)
     TBJAddHttpTask((TBJHttpRequestInternalp)p, 1);
+#else
+    Jenova::HttpDelegator httpDelegator(_jvm);
+    httpDelegator.addHttpTask(p, false);
 #endif
 }
 

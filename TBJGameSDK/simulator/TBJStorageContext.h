@@ -5,6 +5,7 @@
 #pragma once
 
 #include <string>
+#include <map>
 
 class TBJStorageContext
 {
@@ -22,6 +23,8 @@ private:
     void deinit();
     
 private:
+    std::map<std::string, std::pair<std::string, bool>> mFetchCache;
+    
     std::string mPath;
     bool mInited;
     

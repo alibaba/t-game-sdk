@@ -281,6 +281,15 @@ void __atomic_clear_native (const volatile int *ptr, int memorder);
 void __atomic_thread_fence_native (int memorder);
 void __atomic_signal_fence_native (int memorder);
 
+long long __sync_add_and_fetch_size(const volatile void *ptr, long long value, int size);
+#define __sync_add_and_fetch_native(ptr, value) __sync_add_and_fetch_size(ptr, value, sizeof(value))
+
+long long __sync_sub_and_fetch_size(const volatile void *ptr, long long value, int size);
+#define __sync_sub_and_fetch_native(ptr, value) __sync_sub_and_fetch_size(ptr, value, sizeof(value))
+
+int __sync_bool_compare_and_swap_size(const volatile void *ptr, long long oldVal, long long newVal, int size);
+#define __sync_bool_compare_and_swap_native(ptr, oldVal, newVal) __sync_bool_compare_and_swap_size(ptr, oldVal, newVal, sizeof(*ptr))
+
 long long __sync_lock_test_and_set_size(const volatile void *ptr, long long value, int size);
 #define __sync_lock_test_and_set_native(ptr, value) __sync_lock_test_and_set_size(ptr, value, sizeof(value))
 

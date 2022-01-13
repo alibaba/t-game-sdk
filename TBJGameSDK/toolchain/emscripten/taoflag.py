@@ -9,7 +9,7 @@ def get_emcc_compile_flag(debug, keep_symbol):
 
 
 def get_emcc_link_flag():
-    return "-s WASM=1 -s SUPPORT_LONGJMP=1 -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s STANDALONE_WASM --strip-all -Wl " \
+    return "-s WASM=1 -s SUPPORT_LONGJMP=1 -s ERROR_ON_UNDEFINED_SYMBOLS=0 -s STANDALONE_WASM --strip-all " \
            "-Wno-error=address -Wno-pointer-to-int-cast -fno-builtin-function"
 
 

@@ -9,7 +9,7 @@ void TBJHttpCallbackManager::readyToInvoke(TBJHttpResponseInternal* response, TB
     callbackQueue.push(std::make_shared<TBJHttpCallbackTask>(callback, response, stage));
 }
 
-void TBJHttpCallbackManager::inovokeHttpCallbacks(void* gameInstance) {
+void TBJHttpCallbackManager::inovokeHttpCallbacks() {
     std::shared_ptr<TBJHttpCallbackTask> ptr;
     while (callbackQueue.pop(ptr))
     {
@@ -28,17 +28,17 @@ void TBJHttpCallbackManager::inovokeHttpCallbacks(void* gameInstance) {
             }
             else
             {
-                for (int i = 0, isize = bytes.size(); i < isize;)
+                for (int i = 0, isize = (int)bytes.size(); i < isize;)
                 {
                     int left = isize - i;
                     if (left <= responceInternal->response.tmpUserBufferSize)
                     {
                         responceInternal->response.tmpUserBufferSize = left;
-                        memcpy(responceInternal->response.tmpUserBuffer, bytes.data(), left);
-                        break;
+                        memcpy(responceInternal->response.tmpUserBuffer, bytes.data() + i, left);
+                        i = INT_MAX;
                     } else
                     {
-                        memcpy(responceInternal->response.tmpUserBuffer, bytes.data(), responceInternal->response.tmpUserBufferSize);
+                        memcpy(responceInternal->response.tmpUserBuffer, bytes.data() + i, responceInternal->response.tmpUserBufferSize);
                         i += responceInternal->response.tmpUserBufferSize;
                     }
                     ptr->callback(&(responceInternal->response), TBJHttpStage::OnReceivedData);
